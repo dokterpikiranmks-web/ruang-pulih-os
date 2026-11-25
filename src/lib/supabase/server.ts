@@ -41,9 +41,18 @@ export function createAdminClient() {
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-service-key';
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  return createSupabaseClient<Database>(supabaseUrl, serviceRoleKey, {
+  if (!serviceRoleKey) {
+    console.error(
+      '[Supabase Admin] CRITICAL WARNING: SUPABASE_SERVICE_ROLE_KEY is not defined in environment variables! ' +
+      'Falling back to anon key. Privileged database operations may fail with Postgres error 42501.'
+    );
+  }
+
+  const keyToUse = serviceRoleKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-service-key';
+
+  return createSupabaseClient<Database>(supabaseUrl, keyToUse, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,

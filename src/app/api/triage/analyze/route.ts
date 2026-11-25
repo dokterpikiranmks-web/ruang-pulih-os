@@ -16,10 +16,45 @@ const TriageAnalyzeRequestSchema = z.object({
   utm_campaign: z.string().optional().nullable(),
 });
 
-const AIPolishResponseSchema = z.object({
-  polished_summary: z.string(),
-  key_insight: z.string(),
-});
+const AIPolishResponseSchema = z
+  .object({
+    polished_summary: z.string().optional(),
+    key_insight: z.string().optional(),
+    penjelasan_klinis: z.string().optional(),
+    penjelasan: z.string().optional(),
+    summary: z.string().optional(),
+    triage_summary: z.string().optional(),
+    pesan_empatik: z.string().optional(),
+    akar_masalah: z.string().optional(),
+    insight: z.string().optional(),
+    fokus_penanganan: z.string().optional(),
+  })
+  .passthrough()
+  .transform((data) => {
+    const summary =
+      data.polished_summary ||
+      data.penjelasan_klinis ||
+      data.penjelasan ||
+      data.summary ||
+      data.triage_summary ||
+      data.pesan_empatik ||
+      '';
+
+    const insight =
+      data.key_insight ||
+      data.akar_masalah ||
+      data.insight ||
+      data.fokus_penanganan ||
+      'Fokus pelepasan ketegangan saraf dan pemulihan sirkulasi bertahap.';
+
+    return {
+      polished_summary: summary,
+      key_insight: insight,
+    };
+  })
+  .refine((data) => data.polished_summary.trim().length > 0, {
+    message: 'Summary explanation (polished_summary) must not be empty',
+  });
 
 export async function POST(request: Request) {
   try {
@@ -52,7 +87,13 @@ export async function POST(request: Request) {
 - Estimasi Sesi Rekomendasi: ${rules.recommended_sessions}
 
 Tugas:
-Tuliskan 1 paragraf ringkas (3-4 kalimat) penjelasan klinis yang empatik, menenangkan, mudah dimengerti orang awam usia 40-60 tahun, dan menyoroti bagaimana terapi bertahap membantu agar pasien bisa kembali beraktivitas (${payload.disrupted_activity}) dengan nyaman. Jangan pernah berikan over-claim sembuh instan. Kembalikan dalam format JSON.`;
+Tuliskan 1 paragraf ringkas (3-4 kalimat) penjelasan klinis yang empatik, menenangkan, mudah dimengerti orang awam usia 40-60 tahun, dan menyoroti bagaimana terapi bertahap membantu agar pasien bisa kembali beraktivitas (${payload.disrupted_activity}) dengan nyaman. Jangan pernah berikan over-claim sembuh instan.
+
+Wajib berikan output HANYA dalam format JSON valid dengan struktur persis seperti ini:
+{
+  "polished_summary": "1 paragraf penjelasan klinis empatik dan terstruktur (3-4 kalimat)",
+  "key_insight": "1 kalimat ringkas mengenai fokus penanganan utama atau akar masalah"
+}`;
 
         const geminiRes = await callGeminiJSON({
           prompt: aiPrompt,

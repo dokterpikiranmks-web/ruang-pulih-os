@@ -80,19 +80,23 @@ export function calculateCostIDR(
 
 /**
  * Robust JSON extraction and parsing helper.
- * Handles markdown fences (```json ... ```) and leading/trailing non-JSON text.
+ * Handles markdown fences (```json ... ```), conversational text, and trailing commas.
  */
-export function cleanAndParseJSON<T>(rawText: string, schema: z.ZodType<T>): T {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function cleanAndParseJSON<T>(rawText: string, schema: z.ZodType<T, z.ZodTypeDef, any>): T {
   let cleaned = rawText.trim();
 
-  // Strip markdown code fences if present
-  if (cleaned.startsWith('```')) {
+  // 1. Extract content from markdown code fences if present anywhere
+  const fenceMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (fenceMatch && fenceMatch[1]) {
+    cleaned = fenceMatch[1].trim();
+  } else if (cleaned.startsWith('```')) {
     cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '');
     cleaned = cleaned.replace(/\n?```\s*$/, '');
     cleaned = cleaned.trim();
   }
 
-  // If still not cleanly starting with { or [, attempt to isolate the JSON block
+  // 2. If still not cleanly starting with { or [, attempt to isolate the JSON block
   const firstBrace = cleaned.indexOf('{');
   const firstBracket = cleaned.indexOf('[');
   let startIdx = -1;
@@ -117,6 +121,9 @@ export function cleanAndParseJSON<T>(rawText: string, schema: z.ZodType<T>): T {
     cleaned = cleaned.substring(0, endIdx + 1);
   }
 
+  // 3. Remove trailing commas before closing braces/brackets (common LLM formatting quirk)
+  cleaned = cleaned.replace(/,\s*([}\]])/g, '$1');
+
   let parsed: unknown;
   try {
     parsed = JSON.parse(cleaned);
@@ -124,13 +131,30 @@ export function cleanAndParseJSON<T>(rawText: string, schema: z.ZodType<T>): T {
     throw new Error(`Failed to parse AI output as JSON: ${(err as Error).message}\nRaw Text:\n${rawText}`);
   }
 
-  // Validate strictly against the zod schema
+  // 4. Validate strictly against the zod schema
   const validation = schema.safeParse(parsed);
-  if (!validation.success) {
-    throw new Error(`AI JSON output failed schema validation: ${validation.error.message}`);
+  if (validation.success) {
+    return validation.data;
   }
 
-  return validation.data;
+  // If validation failed, check if the schema is expecting an array and parsed is wrapped in an object { items: [...] }
+  if (!Array.isArray(parsed) && typeof parsed === 'object' && parsed !== null) {
+    const obj = parsed as Record<string, unknown>;
+    const keys = Object.keys(obj);
+    for (const key of keys) {
+      if (Array.isArray(obj[key])) {
+        const arrayValidation = schema.safeParse(obj[key]);
+        if (arrayValidation.success) {
+          return arrayValidation.data;
+        }
+      }
+    }
+  }
+
+  const errorDetails = validation.error.issues
+    .map((issue) => `[${issue.path.join('.') || 'root'}]: ${issue.message}`)
+    .join(', ');
+  throw new Error(`AI JSON output failed schema validation: ${errorDetails}`);
 }
 
 /**
@@ -432,7 +456,8 @@ export interface CallGeminiJSONOptions<T> {
   }>;
   systemInstruction?: string;
   tier?: ModelTier;
-  schema: z.ZodType<T>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  schema: z.ZodType<T, z.ZodTypeDef, any>;
   endpoint: string;
   agentName?: string;
   modelOverride?: string;
@@ -543,11 +568,23 @@ export async function callGeminiJSON<T>(
         continue;
       }
 
-      // Parse and validate strictly using Zod
-      const validatedData = cleanAndParseJSON(candidateText, options.schema);
-
-      // Successfully answered! Cache as verified active model
+      // Successfully received HTTP 200 with candidates! Cache as verified active model
       setVerifiedActiveModel(tier, candidateModel);
+
+      // Parse and validate strictly using Zod
+      let validatedData: T;
+      try {
+        validatedData = cleanAndParseJSON(candidateText, options.schema);
+      } catch (validationErr) {
+        // Schema validation or JSON parsing failed on this prompt.
+        // DO NOT mark model unhealthy/cooldown because the HTTP model is fully functional.
+        // DO NOT loop through other candidates; the issue is prompt/schema formatting.
+        console.error(
+          `[Gemini Client] Model ${candidateModel} responded 200 OK but JSON schema validation failed:`,
+          (validationErr as Error).message
+        );
+        throw validationErr;
+      }
 
       // Calculate tokens & IDR cost
       const inputTokens = result.usageMetadata?.promptTokenCount || 0;
@@ -580,9 +617,17 @@ export async function callGeminiJSON<T>(
         },
       };
     } catch (err) {
+      // If the error was already our schema validation error rethrown above, do not mark unhealthy or loop
+      if (
+        (err as Error).message?.includes('AI JSON output failed schema validation') ||
+        (err as Error).message?.includes('Failed to parse AI output as JSON')
+      ) {
+        throw err;
+      }
+
       markModelUnhealthy(candidateModel);
       skippedModels.push(`${candidateModel} (${(err as Error).message})`);
-      console.warn(`[Gemini Client] Model ${candidateModel} threw exception:`, err);
+      console.warn(`[Gemini Client] Model ${candidateModel} threw network/runtime exception:`, err);
       continue;
     }
   }
