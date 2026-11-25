@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <rect width="192" height="192" rx="40" fill="#0D3B2E"/>
+  <circle cx="96" cy="96" r="64" fill="none" stroke="#D4AF37" stroke-width="4" stroke-dasharray="8 4"/>
+  <!-- Healing Lotus / Hands Icon -->
+  <path d="M96 48 C96 68, 72 84, 72 108 C72 124, 84 136, 96 136 C108 136, 120 124, 120 108 C120 84, 96 68, 96 48 Z" fill="#D4AF37"/>
+  <path d="M96 74 C96 90, 80 102, 80 114 C80 124, 88 130, 96 130 C104 130, 112 124, 112 114 C112 102, 96 90, 96 74 Z" fill="#0D3B2E"/>
+  <circle cx="96" cy="116" r="6" fill="#D4AF37"/>
+</svg>

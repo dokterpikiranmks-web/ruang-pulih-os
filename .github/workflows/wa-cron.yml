@@ -1,0 +1,24 @@
+name: WhatsApp Automation Worker Cron
+
+on:
+  schedule:
+    # Run every 15 minutes, 24/7
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    # Allows manual trigger anytime from GitHub Actions tab
+
+jobs:
+  process-wa-queue:
+    name: Process Ruang Pulih WA Queue
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Trigger WA Queue Processing Worker
+        run: |
+          echo "Triggering Ruang Pulih WhatsApp Queue Processing Worker..."
+          curl -fsS -X POST "${{ secrets.APP_URL }}/api/cron/process-wa-queue" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 30
+          echo "WA Queue Processing Worker completed successfully."
