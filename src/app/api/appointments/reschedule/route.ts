@@ -8,6 +8,7 @@ import {
   getWITAParts,
   createWITAISOString,
 } from '@/lib/utils/timezone';
+import { sendWhatsAppViaFonnte } from '@/lib/wa/fonnte';
 
 export const dynamic = 'force-dynamic';
 
@@ -120,7 +121,10 @@ export async function POST(request: Request) {
     const formattedTime = formatWITATime(newStartDate);
     const nowMs = Date.now();
 
-    const gmapsUrl = process.env.NEXT_PUBLIC_GMAPS_REVIEW_URL || 'https://maps.google.com/?q=Ruang+Pulih+Makassar';
+    const gmapsUrl =
+      process.env.NEXT_PUBLIC_GOOGLE_MAPS_LOCATION_URL ||
+      process.env.NEXT_PUBLIC_GMAPS_REVIEW_URL ||
+      'https://maps.google.com/?q=Ruang+Pulih+Makassar';
     const intakeUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://ruangpulihmakassar.com'}/intake/${patient.magic_token}`;
 
     const rescheduleMsg = `Halo *${patient.full_name}*, jadwal terapi Anda di *Ruang Pulih Makassar* telah berhasil DIUBAH (Reschedule):
@@ -180,10 +184,59 @@ Sampai jumpa di Ruang Pulih Makassar!`;
       });
     }
 
+    let rescheduleQueueId: string | null = null;
     try {
-      await admin.from('wa_queue').insert(newWaQueue);
+      const { data: insertedQueue, error: insertQueueError } = await admin
+        .from('wa_queue')
+        .insert(newWaQueue)
+        .select('id, trigger_type');
+
+      if (!insertQueueError && insertedQueue) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const bookingRow = (insertedQueue as any[]).find((q) => q.trigger_type === 'BOOKING');
+        if (bookingRow) {
+          rescheduleQueueId = bookingRow.id;
+        }
+      }
     } catch (waErr) {
       console.warn('[Reschedule API] Failed to re-queue WA messages:', waErr);
+    }
+
+    // Instant WA Delivery for Rescheduled Booking (Non-blocking, max 4s timeout)
+    if (process.env.FONNTE_TOKEN && rescheduleQueueId) {
+      try {
+        const sendResult = await sendWhatsAppViaFonnte({
+          target: patient.whatsapp,
+          message: rescheduleMsg,
+          delay: '2-5',
+          timeoutMs: 4000,
+        });
+
+        if (sendResult.success) {
+          await admin
+            .from('wa_queue')
+            .update({
+              status: 'SENT',
+              sent_at: new Date().toISOString(),
+            })
+            .eq('id', rescheduleQueueId);
+        } else {
+          await admin
+            .from('wa_queue')
+            .update({
+              last_error: sendResult.error || 'Instant reschedule send failed, scheduled for cron retry',
+            })
+            .eq('id', rescheduleQueueId);
+        }
+      } catch (instantErr) {
+        console.warn('[Reschedule API] Instant WA send error (will retry via cron):', instantErr);
+        await admin
+          .from('wa_queue')
+          .update({
+            last_error: (instantErr as Error).message || 'Instant reschedule send exception',
+          })
+          .eq('id', rescheduleQueueId);
+      }
     }
 
     return NextResponse.json({

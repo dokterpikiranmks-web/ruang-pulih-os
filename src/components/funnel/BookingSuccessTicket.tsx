@@ -21,7 +21,10 @@ export default function BookingSuccessTicket({ booking }: BookingSuccessTicketPr
   }, [booking]);
 
   const bookingCode = `#RP-${booking.appointment_id.slice(0, 8).toUpperCase()}`;
-  const gmapsUrl = process.env.NEXT_PUBLIC_GMAPS_REVIEW_URL || 'https://maps.google.com/?q=Ruang+Pulih+Makassar';
+  const gmapsUrl =
+    process.env.NEXT_PUBLIC_GOOGLE_MAPS_LOCATION_URL ||
+    process.env.NEXT_PUBLIC_GMAPS_REVIEW_URL ||
+    'https://maps.google.com/?q=Ruang+Pulih+Makassar';
 
   const isPackage3X = booking.package_type === 'PACKAGE_3X_400K';
 

@@ -21,7 +21,8 @@ export interface WITAParts {
 export interface AppointmentSlot {
   slot_start: string; // ISO 8601 string with +08:00 offset
   slot_end: string;   // ISO 8601 string with +08:00 offset
-  time_label: string; // e.g. "09:00 - 10:00 WITA"
+  session_name: string; // e.g. "Sesi Pagi", "Sesi Sore", "Sesi Malam"
+  time_label: string; // e.g. "10:00 - 11:00 WITA"
 }
 
 export interface WATriggerSchedule {
@@ -121,23 +122,19 @@ export function formatWITADateTime(dateInput: Date | string | number): string {
 
 /**
  * Standard appointment slot definitions for Ruang Pulih Makassar:
- * Operating hours: 09:00 - 20:00 WITA (Mon-Sat)
- * 60 minutes therapy + 30 minutes therapist rest break = 90 min interval.
- * Slots: 09:00, 10:30, 12:00, 13:30, 15:00, 16:30, 18:00, 19:30
+ * Exactly 3 fixed sessions per day in Asia/Makassar (WITA):
+ * 1. Sesi Pagi:  10:00 – 11:00 WITA
+ * 2. Sesi Sore:  16:00 – 17:00 WITA
+ * 3. Sesi Malam: 19:00 – 20:00 WITA
  */
 export const DAILY_SLOT_STARTS = [
-  { hour: 9, minute: 0 },
-  { hour: 10, minute: 30 },
-  { hour: 12, minute: 0 },
-  { hour: 13, minute: 30 },
-  { hour: 15, minute: 0 },
-  { hour: 16, minute: 30 },
-  { hour: 18, minute: 0 },
-  { hour: 19, minute: 30 },
+  { name: 'Sesi Pagi', hour: 10, minute: 0 },
+  { name: 'Sesi Sore', hour: 16, minute: 0 },
+  { name: 'Sesi Malam', hour: 19, minute: 0 },
 ] as const;
 
 /**
- * Generate all 8 standard therapy slots for a given WITA date (format 'YYYY-MM-DD').
+ * Generate the 3 standard therapy slots for a given WITA date (format 'YYYY-MM-DD').
  */
 export function calculateDaySlots(dateStr: string): AppointmentSlot[] {
   const [y, m, d] = dateStr.split('-').map((v) => parseInt(v, 10));
@@ -170,6 +167,7 @@ export function calculateDaySlots(dateStr: string): AppointmentSlot[] {
     return {
       slot_start: slotStartIso,
       slot_end: slotEndIso,
+      session_name: slot.name,
       time_label: `${startStr} - ${endStr} WITA`,
     };
   });

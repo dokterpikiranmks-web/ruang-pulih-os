@@ -152,9 +152,9 @@ assert(
   `H-1: ${triggersSlotIn1Hour.hMinus1}`
 );
 
-// 3. Slot calculation
+// 3. Slot calculation: Exactly 3 Fixed Sessions (WITA)
 const daySlots = calculateDaySlots('2026-11-26');
-assert(daySlots.length === 8, 'Menghasilkan 8 slot kalender WITA');
+assert(daySlots.length === 3, 'Menghasilkan 3 sesi kalender WITA');
 for (const slot of daySlots) {
   assert(slot.slot_start.includes('+08:00'), 'Setiap slot memiliki offset waktu +08:00 (WITA)');
 }

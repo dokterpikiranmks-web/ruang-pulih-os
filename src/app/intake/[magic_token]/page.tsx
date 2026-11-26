@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, use } from 'react';
+import { useState, use, useRef, useEffect, useCallback } from 'react';
 import {
   ShieldAlert,
   Camera,
@@ -65,6 +65,14 @@ export default function DeepIntakePage({
   const [mediators, setMediators] = useState('');
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const [micError, setMicError] = useState<string | null>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
 
   // Section 3: Metabolic, Digestion & Sleep
   const [mealHabits, setMealHabits] = useState('');
@@ -135,48 +143,148 @@ export default function DeepIntakePage({
     }
   };
 
-  // Web Speech API Voice-to-Text
-  const toggleVoiceRecording = () => {
-    if (typeof window === 'undefined') return;
+  // Native Audio Recording & Gemini AI Transcription
+  const formatTimer = (secs: number) => {
+    const m = Math.floor(secs / 60).toString().padStart(2, '0');
+    const s = (secs % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      alert('Browser Anda tidak mendukung perekaman suara otomatis. Silakan ketik cerita Anda pada kotak teks.');
-      return;
+  const stopRecordingMedia = useCallback(() => {
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
     }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (e) {
+        console.warn('Error stopping media recorder:', e);
+      }
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+    setIsRecording(false);
+  }, []);
 
-    if (isRecording) {
-      setIsRecording(false);
+  const handleStartRecording = async () => {
+    setMicError(null);
+    audioChunksRef.current = [];
+    setRecordSeconds(0);
+
+    if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      setMicError('Browser Anda tidak mendukung perekaman suara audio langsung. Silakan ketik cerita Anda.');
       return;
     }
 
     try {
-      const recognition = new SpeechRecognition();
-      recognition.lang = 'id-ID';
-      recognition.continuous = true;
-      recognition.interimResults = true;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
 
-      recognition.onstart = () => setIsRecording(true);
-      recognition.onend = () => setIsRecording(false);
-      recognition.onerror = () => setIsRecording(false);
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      recognition.onresult = (event: any) => {
-        let transcriptText = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcriptText += event.results[i][0].transcript;
+      // Select supported audio MIME type
+      let mimeType = 'audio/webm;codecs=opus';
+      if (typeof MediaRecorder !== 'undefined') {
+        if (!MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          if (MediaRecorder.isTypeSupported('audio/webm')) {
+            mimeType = 'audio/webm';
+          } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+            mimeType = 'audio/mp4';
+          } else {
+            mimeType = '';
+          }
         }
-        setVoiceTranscript((prev) => (prev ? `${prev} ${transcriptText}` : transcriptText));
+      }
+
+      const recorderOptions: MediaRecorderOptions = {
+        audioBitsPerSecond: 24000,
+      };
+      if (mimeType) {
+        recorderOptions.mimeType = mimeType;
+      }
+
+      const recorder = new MediaRecorder(stream, recorderOptions);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
       };
 
-      recognition.start();
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: recorder.mimeType || mimeType || 'audio/webm',
+        });
+
+        if (audioBlob.size === 0) return;
+
+        setIsTranscribing(true);
+        try {
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+            const base64Data = (reader.result as string) || '';
+            try {
+              const res = await fetch('/api/intake/transcribe-audio', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  audio_base64: base64Data,
+                  mime_type: audioBlob.type || 'audio/webm',
+                }),
+              });
+
+              const result = await res.json();
+              if (res.ok && result.success && result.transcript) {
+                setVoiceTranscript((prev) =>
+                  prev ? `${prev}\n\n${result.transcript}` : result.transcript
+                );
+              } else {
+                setMicError(result.error || 'Gagal merapikan suara menjadi teks. Silakan coba lagi.');
+              }
+            } catch {
+              setMicError('Terjadi kendala jaringan saat memproses audio ke Gemini.');
+            } finally {
+              setIsTranscribing(false);
+            }
+          };
+          reader.readAsDataURL(audioBlob);
+        } catch (err) {
+          console.error('Audio blob read error:', err);
+          setIsTranscribing(false);
+        }
+      };
+
+      recorder.start(1000); // chunk every 1s
+      setIsRecording(true);
+
+      // Start 120s timer
+      let elapsed = 0;
+      timerIntervalRef.current = setInterval(() => {
+        elapsed += 1;
+        setRecordSeconds(elapsed);
+        if (elapsed >= 120) {
+          stopRecordingMedia();
+        }
+      }, 1000);
     } catch (err) {
-      console.warn('Speech recognition error:', err);
+      console.warn('Microphone permission or access error:', err);
       setIsRecording(false);
+      setMicError(
+        'Izin mikrofon tidak diberikan atau perangkat mikrofon tidak terdeteksi. Silakan aktifkan izin mikrofon di setelan browser atau ketik keluhan Anda secara manual.'
+      );
     }
   };
+
+  useEffect(() => {
+    return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      }
+    };
+  }, []);
 
   // Submit complete intake
   const handleSubmitIntake = async () => {
@@ -549,26 +657,66 @@ export default function DeepIntakePage({
                   </p>
                 </div>
 
-                {/* Voice story button */}
-                <div className="rounded-xl border border-klinik-gold/40 bg-amber-50/40 p-4 text-center space-y-3">
+                {/* Voice story native recorder */}
+                <div className="rounded-2xl border border-klinik-gold/40 bg-amber-50/50 p-4 text-center space-y-3">
                   <span className="text-xs font-bold text-klinik-primary block">
-                    Malas Mengetik? Rekam Suara Anda (1–2 Menit)
+                    Malas Mengetik? Rekam Suara Cerita Keluhan Anda (Maks. 2 Menit)
                   </span>
-                  <button
-                    type="button"
-                    onClick={toggleVoiceRecording}
-                    className={`inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-xs font-bold transition shadow-sm ${
-                      isRecording
-                        ? 'bg-red-600 text-white animate-pulse'
-                        : 'bg-klinik-gold text-white hover:bg-amber-600'
-                    }`}
-                  >
-                    {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                    <span>{isRecording ? 'Berhenti Merekam' : 'Mulai Rekam Suara'}</span>
-                  </button>
-                  <p className="text-[10px] text-gray-500">
-                    Suara Anda akan otomatis diubah menjadi teks oleh browser (Bahasa Indonesia).
-                  </p>
+
+                  {micError && (
+                    <div className="rounded-xl bg-red-50 p-2.5 text-[11px] text-red-700 font-medium">
+                      {micError}
+                    </div>
+                  )}
+
+                  {isTranscribing ? (
+                    <div className="flex flex-col items-center justify-center gap-2 py-3">
+                      <div className="flex items-center gap-2 text-klinik-primary font-bold text-xs animate-pulse">
+                        <Loader2 className="h-5 w-5 animate-spin text-klinik-gold" />
+                        <span>Sedang merapikan rekaman suara via Gemini AI...</span>
+                      </div>
+                      <span className="text-[10px] text-gray-500">
+                        Menata kalimat tanpa pengulangan kata & merapikan tanda baca.
+                      </span>
+                    </div>
+                  ) : isRecording ? (
+                    <div className="space-y-3 py-1">
+                      <div className="flex items-center justify-center gap-2 text-xs font-bold text-red-600">
+                        <span className="relative flex h-3 w-3">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-red-600"></span>
+                        </span>
+                        <span>Merekam: {formatTimer(recordSeconds)} / 02:00</span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={stopRecordingMedia}
+                        className="inline-flex items-center gap-2 rounded-full bg-red-600 px-6 py-2.5 text-xs font-bold text-white shadow-md hover:bg-red-700 active:scale-95 transition"
+                      >
+                        <MicOff className="h-4 w-4" />
+                        <span>Selesai & Ubah Jadi Teks</span>
+                      </button>
+
+                      <p className="text-[10px] text-gray-500">
+                        Klik tombol merah di atas jika cerita keluhan Anda sudah selesai.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={handleStartRecording}
+                        className="inline-flex items-center gap-2 rounded-full bg-klinik-gold px-6 py-2.5 text-xs font-bold text-white shadow-md hover:bg-amber-600 active:scale-95 transition"
+                      >
+                        <Mic className="h-4 w-4" />
+                        <span>Mulai Rekam Cerita</span>
+                      </button>
+                      <p className="text-[10px] text-gray-500">
+                        Suara Anda akan direkam jernih & ditranskripsikan rapi oleh Gemini AI tanpa pengulangan kata.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div>

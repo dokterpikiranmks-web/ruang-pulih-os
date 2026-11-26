@@ -50,33 +50,33 @@ const {
 
 assert(TIMEZONE_WITA === 'Asia/Makassar', 'Timezone terdefinisi resmi Asia/Makassar (WITA)');
 
-// Test Day Slots Generation
+// Test Day Slots Generation: Exactly 3 Fixed Sessions (WITA)
 const slots = calculateDaySlots('2026-11-25');
-assert(Array.isArray(slots) && slots.length === 8, 'Menghasilkan tepat 8 slot operasional per hari (09:00 - 19:30 WITA)');
+assert(Array.isArray(slots) && slots.length === 3, 'Menghasilkan tepat 3 sesi operasional per hari (10:00, 16:00, 19:00 WITA)');
 
 const firstSlot = slots[0];
 assert(
-  firstSlot.slot_start === '2026-11-25T09:00:00+08:00',
-  'Slot pertama dimulai tepat pukul 09:00 WITA (+08:00)',
+  firstSlot.slot_start === '2026-11-25T10:00:00+08:00' && firstSlot.session_name === 'Sesi Pagi',
+  'Slot pertama dimulai tepat pukul 10:00 WITA (Sesi Pagi)',
   `Received: ${firstSlot.slot_start}`
 );
 assert(
-  firstSlot.slot_end === '2026-11-25T10:00:00+08:00',
-  'Slot pertama berdurasi tepat 60 menit (selesai 10:00 WITA)',
+  firstSlot.slot_end === '2026-11-25T11:00:00+08:00',
+  'Slot pertama berdurasi tepat 60 menit (selesai 11:00 WITA)',
   `Received: ${firstSlot.slot_end}`
 );
 
 const secondSlot = slots[1];
 assert(
-  secondSlot.slot_start === '2026-11-25T10:30:00+08:00',
-  'Slot kedua dimulai pukul 10:30 WITA (terdapat jeda istirahat 30 menit dari slot 1)',
+  secondSlot.slot_start === '2026-11-25T16:00:00+08:00' && secondSlot.session_name === 'Sesi Sore',
+  'Slot kedua dimulai pukul 16:00 WITA (Sesi Sore)',
   `Received: ${secondSlot.slot_start}`
 );
 
-const lastSlot = slots[7];
+const lastSlot = slots[2];
 assert(
-  lastSlot.slot_start === '2026-11-25T19:30:00+08:00' && lastSlot.slot_end === '2026-11-25T20:30:00+08:00',
-  'Slot terakhir 19:30 - 20:30 WITA sesuai spesifikasi PRD',
+  lastSlot.slot_start === '2026-11-25T19:00:00+08:00' && lastSlot.slot_end === '2026-11-25T20:00:00+08:00' && lastSlot.session_name === 'Sesi Malam',
+  'Slot ketiga 19:00 - 20:00 WITA (Sesi Malam) sesuai spesifikasi',
   `Received: ${lastSlot.slot_start}`
 );
 
@@ -117,6 +117,13 @@ assert(
   'Format jam WITA menyertakan label WITA',
   `Received: ${formattedTime}`
 );
+
+// Test Audio Normalization for Gemini Audio-to-Text
+const { normalizeAudioMimeType } = await import('../src/lib/intake/audio.ts');
+assert(normalizeAudioMimeType('audio/webm;codecs=opus') === 'audio/webm', 'MIME normalizer membersihkan codecs webm');
+assert(normalizeAudioMimeType('audio/mp4; codecs=mp4a.40.2') === 'audio/mp4', 'MIME normalizer mendeteksi mp4');
+assert(normalizeAudioMimeType('audio/m4a') === 'audio/mp4', 'MIME normalizer memetakan m4a ke mp4');
+assert(normalizeAudioMimeType('audio/ogg') === 'audio/ogg', 'MIME normalizer mendeteksi ogg');
 
 // -----------------------------------------------------------------------------
 // TEST SUITE 2: GEMINI COST CALCULATOR & STRICT JSON PARSER

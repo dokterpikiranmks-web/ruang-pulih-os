@@ -3,6 +3,7 @@ import { z } from 'zod';
 import crypto from 'crypto';
 import { createAdminClient } from '@/lib/supabase/server';
 import { normalizeIndonesianPhone } from '@/lib/utils/phone';
+import { sendWhatsAppViaFonnte } from '@/lib/wa/fonnte';
 import {
   calculateWAFollowUpTriggers,
   formatWITADateTime,
@@ -184,7 +185,10 @@ export async function POST(request: Request) {
     // 7. Enqueue initial WhatsApp lifecycle messages (3 pre-visit triggers)
     const triggers = calculateWAFollowUpTriggers(payload.slot_start);
     const intakeUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://ruangpulihmakassar.com'}/intake/${magicToken}`;
-    const gmapsUrl = process.env.NEXT_PUBLIC_GMAPS_REVIEW_URL || 'https://maps.google.com/?q=Ruang+Pulih+Makassar';
+    const gmapsUrl =
+      process.env.NEXT_PUBLIC_GOOGLE_MAPS_LOCATION_URL ||
+      process.env.NEXT_PUBLIC_GMAPS_REVIEW_URL ||
+      'https://maps.google.com/?q=Ruang+Pulih+Makassar';
 
     // Queue Message 1: BOOKING Confirmation (immediate)
     const bookingMessageBody = `Halo *${payload.full_name}*, terima kasih telah membuat janji di *Ruang Pulih Makassar*.
@@ -265,10 +269,59 @@ Ruangan dan terapis kami di Jl. Batua Raya 10B No. 9 Makassar telah siap menyamb
       });
     }
 
+    let bookingQueueId: string | null = null;
     try {
-      await admin.from('wa_queue').insert(waQueueInserts);
+      const { data: insertedQueue, error: insertQueueError } = await admin
+        .from('wa_queue')
+        .insert(waQueueInserts)
+        .select('id, trigger_type');
+
+      if (!insertQueueError && insertedQueue) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const bookingRow = (insertedQueue as any[]).find((q) => q.trigger_type === 'BOOKING');
+        if (bookingRow) {
+          bookingQueueId = bookingRow.id;
+        }
+      }
     } catch (waErr) {
       console.warn('[Booking API] Failed to enqueue WA messages (non-blocking):', waErr);
+    }
+
+    // Instant WA Delivery (Non-blocking, max 4s timeout)
+    if (process.env.FONNTE_TOKEN && bookingQueueId) {
+      try {
+        const sendResult = await sendWhatsAppViaFonnte({
+          target: normalizedPhone,
+          message: bookingMessageBody,
+          delay: '2-5',
+          timeoutMs: 4000,
+        });
+
+        if (sendResult.success) {
+          await admin
+            .from('wa_queue')
+            .update({
+              status: 'SENT',
+              sent_at: new Date().toISOString(),
+            })
+            .eq('id', bookingQueueId);
+        } else {
+          await admin
+            .from('wa_queue')
+            .update({
+              last_error: sendResult.error || 'Instant send failed, scheduled for cron retry',
+            })
+            .eq('id', bookingQueueId);
+        }
+      } catch (instantErr) {
+        console.warn('[Booking API] Instant WA send error (will retry via cron):', instantErr);
+        await admin
+          .from('wa_queue')
+          .update({
+            last_error: (instantErr as Error).message || 'Instant send exception',
+          })
+          .eq('id', bookingQueueId);
+      }
     }
 
     return NextResponse.json(

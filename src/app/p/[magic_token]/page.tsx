@@ -21,6 +21,7 @@ import {
   Loader2,
   FileText,
   ChevronRight,
+  ExternalLink,
 } from 'lucide-react';
 import { formatWITADateTime, formatWITATime } from '@/lib/utils/timezone';
 
@@ -785,9 +786,20 @@ export default function PatientPortalPage({
                     <Calendar className="w-4 h-4 text-klinik-gold" />
                     <span>{formatWITADateTime(appointment.slot_start)}</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-klinik-gold" />
-                    <span>Jl. Batua Raya 10B No. 9, Makassar</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-klinik-gold shrink-0" />
+                      <span>Jl. Batua Raya 10B No. 9, Makassar</span>
+                    </div>
+                    <a
+                      href={process.env.NEXT_PUBLIC_GOOGLE_MAPS_LOCATION_URL || 'https://maps.google.com/?q=Ruang+Pulih+Makassar'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] font-bold text-klinik-primary hover:text-klinik-gold underline shrink-0 flex items-center gap-1"
+                    >
+                      <span>Buka Maps</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
                   </div>
                 </div>
 

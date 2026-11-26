@@ -7,6 +7,7 @@ import { formatWITADate } from '@/lib/utils/timezone';
 interface SlotItem {
   slot_start: string;
   slot_end: string;
+  session_name?: string;
   time_label: string;
   available: boolean;
   reason: 'BOOKED' | 'PAST' | null;
@@ -250,7 +251,7 @@ export default function ReschedulePage({
                   {slotsError}
                 </div>
               ) : (
-                <div className="mt-2.5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                <div className="mt-2.5 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
                   {slots.map((s) => {
                     const isSelected = selectedSlot === s.slot_start;
                     const timeText = s.time_label.replace(' WITA', '');
@@ -259,13 +260,16 @@ export default function ReschedulePage({
                       return (
                         <div
                           key={s.slot_start}
-                          className="flex min-h-[48px] flex-col items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-2 text-center opacity-60 cursor-not-allowed"
+                          className="flex min-h-[58px] flex-col items-center justify-center rounded-xl border border-gray-200 bg-gray-100 p-2.5 text-center opacity-60 cursor-not-allowed"
                         >
-                          <span className="text-xs font-medium text-gray-500 line-through">
-                            {timeText}
+                          <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                            {s.session_name || 'Sesi Terapi'}
                           </span>
-                          <span className="text-[10px] text-gray-400">
-                            {s.reason === 'PAST' ? 'Lewat' : 'Penuh'}
+                          <span className="text-xs font-medium text-gray-500 line-through">
+                            {timeText} WITA
+                          </span>
+                          <span className="text-[10px] text-gray-400 font-medium">
+                            {s.reason === 'PAST' ? 'Waktu Lewat' : 'Sudah Terisi'}
                           </span>
                         </div>
                       );
@@ -276,13 +280,16 @@ export default function ReschedulePage({
                         key={s.slot_start}
                         type="button"
                         onClick={() => setSelectedSlot(s.slot_start)}
-                        className={`flex min-h-[48px] flex-col items-center justify-center rounded-xl border p-2 text-center transition-all ${
+                        className={`flex min-h-[58px] flex-col items-center justify-center rounded-xl border p-2.5 text-center transition-all ${
                           isSelected
-                            ? 'border-klinik-primary bg-emerald-50 font-bold text-klinik-primary ring-2 ring-klinik-primary'
+                            ? 'border-klinik-primary bg-emerald-50 font-bold text-klinik-primary ring-2 ring-klinik-primary shadow-sm'
                             : 'border-klinik-border bg-white text-klinik-text hover:border-klinik-gold/60'
                         }`}
                       >
-                        <span className="text-xs font-bold">{timeText}</span>
+                        <span className={`text-[11px] font-bold uppercase tracking-wider ${isSelected ? 'text-klinik-primary' : 'text-klinik-gold'}`}>
+                          {s.session_name || 'Sesi Terapi'}
+                        </span>
+                        <span className="text-xs font-bold text-klinik-text">{timeText} WITA</span>
                         <span className="text-[10px] text-emerald-700 font-semibold">Tersedia</span>
                       </button>
                     );

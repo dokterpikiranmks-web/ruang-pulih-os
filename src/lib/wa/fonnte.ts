@@ -2,6 +2,7 @@ export interface SendWhatsAppParams {
   target: string; // e.g. "62811443327"
   message: string;
   delay?: string; // default "3-7"
+  timeoutMs?: number; // default 4000ms
 }
 
 export interface FonnteSendResult {
@@ -37,12 +38,19 @@ export async function sendWhatsAppMessage(
     formData.append('delay', params.delay || '3-7');
     formData.append('countryCode', '62');
 
+    const timeoutMs = params.timeoutMs || 4000;
+    const signal =
+      typeof AbortSignal !== 'undefined' && AbortSignal.timeout
+        ? AbortSignal.timeout(timeoutMs)
+        : undefined;
+
     const res = await fetch('https://api.fonnte.com/send', {
       method: 'POST',
       headers: {
         Authorization: token,
       },
       body: formData,
+      signal,
     });
 
     const data = await res.json();
@@ -54,11 +62,15 @@ export async function sendWhatsAppMessage(
         rawResponse: data,
       };
     } else {
-      const errReason = data.reason || data.message || 'Gagal mengirim via Fonnte';
+      const errReason =
+        data.reason ||
+        data.message ||
+        data.detail ||
+        (typeof data === 'object' ? JSON.stringify(data) : 'Gagal mengirim via Fonnte');
       console.warn(`[Fonnte] Error response:`, data);
       return {
         success: false,
-        error: errReason,
+        error: String(errReason),
         rawResponse: data,
       };
     }
@@ -67,7 +79,9 @@ export async function sendWhatsAppMessage(
     console.error('[Fonnte] Network / Fetch error:', errMsg);
     return {
       success: false,
-      error: errMsg,
+      error: errMsg.includes('aborted') ? 'Pengiriman timeout (>4s)' : errMsg,
     };
   }
 }
+
+export const sendWhatsAppViaFonnte = sendWhatsAppMessage;
