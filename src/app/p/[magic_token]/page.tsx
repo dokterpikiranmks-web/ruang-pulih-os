@@ -22,6 +22,7 @@ import {
   FileText,
   ChevronRight,
   ExternalLink,
+  ShieldAlert,
 } from 'lucide-react';
 import { formatWITADateTime, formatWITATime } from '@/lib/utils/timezone';
 
@@ -54,6 +55,11 @@ interface ProgressLog {
   adherence_pct: number;
   patient_note: string | null;
   ai_adaptation_alert: string | null;
+  systolic_bp?: number | null;
+  diastolic_bp?: number | null;
+  blood_sugar_mgdl?: number | null;
+  blood_sugar_context?: string | null;
+  completed_habits_json?: string[] | null;
   logged_at: string;
 }
 
@@ -92,6 +98,14 @@ export default function PatientPortalPage({
   const [isSubmittingCheckIn, setIsSubmittingCheckIn] = useState(false);
   const [checkInSuccessMsg, setCheckInSuccessMsg] = useState<string | null>(null);
 
+  // Optional Home Vitals State (BP & Blood Sugar)
+  const [systolicBp, setSystolicBp] = useState<string>('');
+  const [diastolicBp, setDiastolicBp] = useState<string>('');
+  const [bloodSugar, setBloodSugar] = useState<string>('');
+  const [bloodSugarContext, setBloodSugarContext] = useState<'SEWAKTU' | 'PUASA' | '2_JAM_PP'>('SEWAKTU');
+  const [showVitalsForm, setShowVitalsForm] = useState(false);
+  const [urgentWarning, setUrgentWarning] = useState<string | null>(null);
+
   // Home Care Checklist
   const [completedItems, setCompletedItems] = useState<Record<string, boolean>>({});
 
@@ -110,6 +124,21 @@ export default function PatientPortalPage({
         setAppointment(data.appointment);
         setProtocol(data.protocol);
         setProgressLogs(data.progress_logs || []);
+
+        // Restore latest completed habits if available
+        if (data.progress_logs && data.progress_logs.length > 0) {
+          const latestWithHabits = [...data.progress_logs]
+            .reverse()
+            .find((l: any) => l.completed_habits_json && l.completed_habits_json.length > 0);
+          if (latestWithHabits && Array.isArray(latestWithHabits.completed_habits_json)) {
+            const hMap: Record<string, boolean> = {};
+            latestWithHabits.completed_habits_json.forEach((k: string) => {
+              hMap[k] = true;
+            });
+            setCompletedItems(hMap);
+          }
+        }
+
         setIsLocked(false);
       } else {
         setIsLocked(true);
@@ -163,6 +192,25 @@ export default function PatientPortalPage({
     }
   };
 
+  // Toggle habit checkbox and automatically update adherence %
+  const handleToggleHabit = (key: string) => {
+    const isCurrentlyDone = !!completedItems[key];
+    const updated = { ...completedItems, [key]: !isCurrentlyDone };
+    setCompletedItems(updated);
+
+    const protocolPhasesList: ProtocolPhase[] = protocol?.protocol_phases || [];
+    let totalHabits = 0;
+    protocolPhasesList.forEach((p) => {
+      totalHabits += p.home_care?.length || 0;
+    });
+
+    if (totalHabits > 0) {
+      const doneCount = Object.keys(updated).filter((k) => updated[k]).length;
+      const pct = Math.min(100, Math.round((doneCount / totalHabits) * 100));
+      setAdherencePct(pct);
+    }
+  };
+
   // Handle Progress Check-In Submit
   const handleCheckInSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -170,6 +218,8 @@ export default function PatientPortalPage({
     setCheckInSuccessMsg(null);
 
     try {
+      const activeHabits = Object.keys(completedItems).filter((k) => completedItems[k]);
+
       const res = await fetch('/api/patient/progress', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -180,12 +230,22 @@ export default function PatientPortalPage({
           stress_score: stressScore,
           adherence_pct: adherencePct,
           patient_note: patientNote,
+          systolic_bp: systolicBp ? parseInt(systolicBp, 10) : null,
+          diastolic_bp: diastolicBp ? parseInt(diastolicBp, 10) : null,
+          blood_sugar_mgdl: bloodSugar ? parseInt(bloodSugar, 10) : null,
+          blood_sugar_context: bloodSugar ? bloodSugarContext : null,
+          completed_habits_json: activeHabits,
         }),
       });
 
       const data = await res.json();
       if (res.ok && data.success) {
         setCheckInSuccessMsg('Check-in berhasil disimpan! Terima kasih sudah memantau pemulihan Anda.');
+        if (data.urgent_patient_warning) {
+          setUrgentWarning(data.urgent_patient_warning);
+        } else {
+          setUrgentWarning(null);
+        }
         setPatientNote('');
         await fetchPortalData();
       } else {
@@ -468,6 +528,19 @@ export default function PatientPortalPage({
         {/* =================================================================== */}
         {activeTab === 'PROGRESS' && (
           <div className="space-y-4">
+            {/* Urgent Patient Warning Alert (from Agent 7 Guardrail) */}
+            {urgentWarning && (
+              <div className="bg-red-50 border-2 border-red-300 rounded-3xl p-5 text-red-950 space-y-2 shadow-sm animate-pulse">
+                <div className="flex items-center gap-2 font-black text-red-700 text-sm">
+                  <ShieldAlert className="w-5 h-5 text-red-600 shrink-0" />
+                  <span>PERINGATAN PEMANTAUAN KESEHATAN</span>
+                </div>
+                <p className="text-xs leading-relaxed font-medium">
+                  {urgentWarning}
+                </p>
+              </div>
+            )}
+
             {/* SVG Trend Chart */}
             <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
               <div className="flex items-center justify-between mb-3">
@@ -535,6 +608,63 @@ export default function PatientPortalPage({
                 </div>
               )}
             </div>
+
+            {/* History of Home Vitals (BP & Blood Sugar) */}
+            {(() => {
+              const vitalsLogs = progressLogs.filter((l) => l.systolic_bp || l.blood_sugar_mgdl);
+              if (vitalsLogs.length === 0) return null;
+              return (
+                <div className="bg-white rounded-3xl p-4 shadow-sm border border-gray-100 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold text-xs text-klinik-primary flex items-center gap-1.5 font-serif">
+                      <Activity className="w-3.5 h-3.5 text-klinik-gold" />
+                      <span>Riwayat Tensi & Gula Darah Mandiri</span>
+                    </h4>
+                    <span className="text-[10px] text-gray-400">
+                      {vitalsLogs.length} catatan
+                    </span>
+                  </div>
+                  <div className="divide-y divide-gray-100 max-h-40 overflow-y-auto">
+                    {vitalsLogs.slice(-5).reverse().map((log) => (
+                      <div key={log.id} className="py-2 flex items-center justify-between text-xs">
+                        <div>
+                          <span className="font-semibold text-gray-800">
+                            {new Date(log.logged_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
+                          </span>
+                          <span className="text-[10px] text-gray-400 ml-1.5">
+                            {formatWITATime(log.logged_at)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {log.systolic_bp && (
+                            <span className={`px-2 py-0.5 rounded-md font-mono font-bold text-[11px] ${
+                              log.systolic_bp >= 180 || (log.diastolic_bp && log.diastolic_bp >= 120)
+                                ? 'bg-red-100 text-red-800 border border-red-200'
+                                : log.systolic_bp >= 150
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-emerald-50 text-emerald-800'
+                            }`}>
+                              {log.systolic_bp}/{log.diastolic_bp || '-'} mmHg
+                            </span>
+                          )}
+                          {log.blood_sugar_mgdl && (
+                            <span className={`px-2 py-0.5 rounded-md font-mono font-bold text-[11px] ${
+                              log.blood_sugar_mgdl < 70 || log.blood_sugar_mgdl >= 300
+                                ? 'bg-red-100 text-red-800 border border-red-200'
+                                : log.blood_sugar_mgdl >= 200
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-blue-50 text-blue-800'
+                            }`}>
+                              {log.blood_sugar_mgdl} mg/dL ({log.blood_sugar_context ? log.blood_sugar_context.toLowerCase() : 'cek'})
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Check-In 30 Detik Form */}
             <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100">
@@ -616,6 +746,106 @@ export default function PatientPortalPage({
                     onChange={(e) => setStressScore(Number(e.target.value))}
                     className="w-full accent-purple-600 h-2 bg-gray-200 rounded-lg cursor-pointer"
                   />
+                </div>
+
+                {/* 4. Catat Tensi & Gula Darah (Opsional) */}
+                <div className="border border-gray-100 rounded-2xl p-3.5 bg-gray-50/70 space-y-3">
+                  <div
+                    className="flex items-center justify-between cursor-pointer"
+                    onClick={() => setShowVitalsForm(!showVitalsForm)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Heart className="w-4 h-4 text-klinik-primary" />
+                      <div>
+                        <div className="text-xs font-bold text-gray-800">
+                          Catat Tensi & Gula Darah (Opsional)
+                        </div>
+                        <div className="text-[10px] text-gray-400">
+                          Bila Anda memiliki alat ukur mandiri di rumah
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="text-xs font-bold text-klinik-primary bg-white px-2.5 py-1 rounded-lg border border-gray-200 shadow-2xs hover:bg-gray-50"
+                    >
+                      {showVitalsForm ? 'Tutup' : '+ Buka Form'}
+                    </button>
+                  </div>
+
+                  {showVitalsForm && (
+                    <div className="space-y-3 pt-2 border-t border-gray-200/60">
+                      {/* Tensi Input */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-700 block mb-1">
+                          Tekanan Darah (Tensi)
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1">
+                            <input
+                              type="number"
+                              min="60"
+                              max="260"
+                              value={systolicBp}
+                              onChange={(e) => setSystolicBp(e.target.value)}
+                              placeholder="120"
+                              className="w-full text-center font-mono font-bold text-base py-2 border border-gray-200 rounded-xl bg-white focus:border-klinik-primary outline-hidden"
+                            />
+                            <span className="text-[9px] text-gray-400 block text-center mt-0.5">Sistolik (Atas)</span>
+                          </div>
+                          <span className="text-gray-400 font-bold text-lg">/</span>
+                          <div className="flex-1">
+                            <input
+                              type="number"
+                              min="40"
+                              max="160"
+                              value={diastolicBp}
+                              onChange={(e) => setDiastolicBp(e.target.value)}
+                              placeholder="80"
+                              className="w-full text-center font-mono font-bold text-base py-2 border border-gray-200 rounded-xl bg-white focus:border-klinik-primary outline-hidden"
+                            />
+                            <span className="text-[9px] text-gray-400 block text-center mt-0.5">Diastolik (Bawah)</span>
+                          </div>
+                          <span className="text-xs text-gray-500 font-medium">mmHg</span>
+                        </div>
+                      </div>
+
+                      {/* Gula Darah Input */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-700 block mb-1">
+                          Kadar Gula Darah
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min="30"
+                            max="600"
+                            value={bloodSugar}
+                            onChange={(e) => setBloodSugar(e.target.value)}
+                            placeholder="110"
+                            className="w-24 text-center font-mono font-bold text-base py-2 border border-gray-200 rounded-xl bg-white focus:border-klinik-primary outline-hidden"
+                          />
+                          <span className="text-xs text-gray-500 font-medium">mg/dL</span>
+                          <div className="flex gap-1 ml-auto text-[10px]">
+                            {(['SEWAKTU', 'PUASA', '2_JAM_PP'] as const).map((ctx) => (
+                              <button
+                                key={ctx}
+                                type="button"
+                                onClick={() => setBloodSugarContext(ctx)}
+                                className={`px-2 py-1 rounded-lg font-bold border transition ${
+                                  bloodSugarContext === ctx
+                                    ? 'border-klinik-primary bg-klinik-primary text-white shadow-2xs'
+                                    : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-100'
+                                }`}
+                              >
+                                {ctx === 'PUASA' ? 'Puasa' : ctx === '2_JAM_PP' ? '2 Jam PP' : 'Sewaktu'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* 4. Notes */}
@@ -744,10 +974,8 @@ export default function PatientPortalPage({
                               <input
                                 type="checkbox"
                                 checked={isDone}
-                                onChange={() =>
-                                  setCompletedItems((prev) => ({ ...prev, [key]: !isDone }))
-                                }
-                                className="mt-0.5 rounded text-klinik-primary accent-klinik-primary w-4 h-4"
+                                onChange={() => handleToggleHabit(key)}
+                                className="mt-0.5 rounded text-klinik-primary accent-klinik-primary w-4 h-4 cursor-pointer"
                               />
                               <span className={isDone ? 'line-through opacity-70' : ''}>
                                 {item}
@@ -758,6 +986,20 @@ export default function PatientPortalPage({
                       </div>
                     </div>
                   ))}
+
+                  <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
+                    <span className="text-gray-500">
+                      Kepatuhan panduan hari ini: <strong className="text-klinik-primary font-bold">{adherencePct}%</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('PROGRESS')}
+                      className="inline-flex items-center gap-1 text-klinik-primary font-bold hover:underline"
+                    >
+                      <span>Buka Form Check-In</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

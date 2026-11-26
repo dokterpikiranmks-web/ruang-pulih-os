@@ -16,9 +16,32 @@ import {
   Brain,
   ShieldCheck,
   Stethoscope,
+  MessageSquare,
+  Send,
+  TrendingDown,
+  ExternalLink,
+  Check,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { formatWITADateTime, formatWITATime } from '@/lib/utils/timezone';
 import type { ClinicalConsensusOutput } from '@/lib/agents/types';
+
+interface ProgressLogRecord {
+  id: string;
+  pain_score: number;
+  sleep_score: number;
+  stress_score: number;
+  adherence_pct: number;
+  patient_note: string | null;
+  ai_adaptation_alert: string | null;
+  alert_acknowledged: boolean;
+  systolic_bp: number | null;
+  diastolic_bp: number | null;
+  blood_sugar_mgdl: number | null;
+  blood_sugar_context: string | null;
+  completed_habits_json: string[] | null;
+  logged_at: string;
+}
 
 export default function PatientExaminationRoomPage({
   params,
@@ -37,6 +60,7 @@ export default function PatientExaminationRoomPage({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [appointment, setAppointment] = useState<any>(null);
   const [confidenceScore, setConfidenceScore] = useState<number>(45);
+  const [progressLogs, setProgressLogs] = useState<ProgressLogRecord[]>([]);
 
   const [isLoading, setIsLoading] = useState(true);
 
@@ -138,6 +162,14 @@ export default function PatientExaminationRoomPage({
           },
         });
       }
+
+      // 5. Fetch Home Progress Logs
+      const { data: pLogs } = await supabase
+        .from('progress_logs')
+        .select('*')
+        .eq('patient_id', patientId)
+        .order('logged_at', { ascending: false });
+      setProgressLogs((pLogs || []) as ProgressLogRecord[]);
     } catch (err) {
       console.warn('[Examination Room] Error fetching data:', err);
     } finally {
@@ -241,9 +273,15 @@ export default function PatientExaminationRoomPage({
     ? `${typeof window !== 'undefined' ? window.location.origin : ''}/p/${patient.magic_token}`
     : '';
 
+  const pinLast4 = patient?.whatsapp ? patient.whatsapp.slice(-4) : '••••';
+  const portalShareText = `Halo Bapak/Ibu ${patient?.full_name || ''}, berikut tautan akses ke Aplikasi Pasien Ruang Pulih Anda:
+🔗 ${magicLinkUrl}
+
+*(Gunakan 4 digit terakhir nomor WhatsApp Anda: **${pinLast4}** sebagai PIN masuk)*`;
+
   const handleCopyMagicLink = () => {
-    if (magicLinkUrl) {
-      navigator.clipboard.writeText(magicLinkUrl);
+    if (portalShareText) {
+      navigator.clipboard.writeText(portalShareText);
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2500);
     }
@@ -302,7 +340,7 @@ export default function PatientExaminationRoomPage({
               className="inline-flex items-center gap-2 rounded-xl border border-klinik-border bg-gray-50 px-3.5 py-2 text-xs font-bold text-klinik-primary hover:bg-gray-100"
             >
               <Copy className="h-3.5 w-3.5 text-klinik-gold" />
-              <span>{copiedLink ? 'Tautan Tersalin!' : 'Salin Magic-Link Pasien (/p)'}</span>
+              <span>{copiedLink ? 'Teks + PIN Tersalin!' : 'Salin Link Portal + Info PIN'}</span>
             </button>
           </div>
 
@@ -459,6 +497,284 @@ export default function PatientExaminationRoomPage({
                 )}
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* =================================================================== */}
+        {/* SECTION: PANTAUAN PROGRES & KEPATUHAN DI RUMAH                       */}
+        {/* =================================================================== */}
+        <div className="rounded-2xl border border-klinik-border bg-white p-6 shadow-xs space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <Activity className="h-5 w-5 text-klinik-primary" />
+                <h3 className="text-base font-bold text-klinik-primary">
+                  Pantauan Progres & Kepatuhan di Rumah
+                </h3>
+              </div>
+              <p className="text-xs text-klinik-muted mt-0.5">
+                Data check-in mandiri pasien, tren nyeri, riwayat tensi, gula darah, & kepatuhan habit rumah
+              </p>
+            </div>
+            <span className="rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-bold text-emerald-800 self-start sm:self-auto">
+              {progressLogs.length} Check-In Tercatat
+            </span>
+          </div>
+
+          {/* Adaptation Alert Card with 1-Click WhatsApp Follow-up */}
+          {(() => {
+            const activeAlertLog = progressLogs.find((l) => l.ai_adaptation_alert);
+            if (!activeAlertLog || !activeAlertLog.ai_adaptation_alert) return null;
+
+            const isRed = activeAlertLog.ai_adaptation_alert.includes('RED');
+            const waPhone = patient?.whatsapp ? patient.whatsapp.replace(/\D/g, '') : '';
+            const followUpMsg = `Halo Bapak/Ibu ${patient?.full_name || ''}, kami dari Ruang Pulih Makassar ingin menanyakan kabar dan perkembangan kondisi tubuh Anda setelah check-in mandiri kemarin. Apakah saat ini rasa nyeri atau kondisi tensi/tubuh Anda sudah terasa lebih nyaman?`;
+            const waLink = `https://wa.me/${waPhone}?text=${encodeURIComponent(followUpMsg)}`;
+
+            return (
+              <div
+                className={`rounded-xl border p-4 text-xs space-y-2.5 ${
+                  isRed
+                    ? 'border-red-300 bg-red-50 text-red-950'
+                    : 'border-amber-300 bg-amber-50 text-amber-950'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 font-bold">
+                    <ShieldAlert className={`h-4 w-4 ${isRed ? 'text-red-600' : 'text-amber-600'}`} />
+                    <span className={isRed ? 'text-red-800 font-extrabold' : 'text-amber-900 font-bold'}>
+                      {isRed ? 'Peringatan Darurat Adaptasi Klinis (RED)' : 'Perhatian Evaluasi Adaptasi (YELLOW)'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-gray-500">
+                    {formatWITADateTime(activeAlertLog.logged_at)}
+                  </span>
+                </div>
+                <p className="leading-relaxed font-medium">
+                  {activeAlertLog.ai_adaptation_alert}
+                </p>
+                <div className="pt-1 flex items-center gap-3">
+                  <a
+                    href={waLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold text-white shadow-2xs transition ${
+                      isRed ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700'
+                    }`}
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                    <span>Follow-Up Pasien via WhatsApp (1-Klik)</span>
+                  </a>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* SVG Recovery Trends Chart */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                <TrendingDown className="h-4 w-4 text-klinik-primary" />
+                <span>Grafik Tren Pemulihan (Nyeri, Tidur, & Kepatuhan)</span>
+              </h4>
+              <div className="flex items-center gap-3 text-[10px] font-semibold">
+                <span className="flex items-center gap-1 text-emerald-800">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#0D3B2E]" /> Nyeri (1-10)
+                </span>
+                <span className="flex items-center gap-1 text-blue-700">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#2563EB]" /> Tidur (1-10)
+                </span>
+                <span className="flex items-center gap-1 text-amber-700">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#D4AF37]" /> Kepatuhan (%)
+                </span>
+              </div>
+            </div>
+
+            {progressLogs.length < 2 ? (
+              <div className="rounded-xl bg-gray-50 p-6 text-center text-xs text-gray-400">
+                Belum cukup data untuk membentuk grafik tren (minimal 2 kali check-in dari pasien).
+              </div>
+            ) : (
+              <div className="rounded-xl border border-gray-100 bg-gray-50/50 p-3 overflow-x-auto">
+                <svg viewBox="0 0 500 150" className="w-full h-36">
+                  {/* Grid lines */}
+                  <line x1="40" y1="20" x2="480" y2="20" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="3 3" />
+                  <line x1="40" y1="65" x2="480" y2="65" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="3 3" />
+                  <line x1="40" y1="110" x2="480" y2="110" stroke="#e2e8f0" strokeWidth="1" strokeDasharray="3 3" />
+
+                  <text x="10" y="24" fill="#94a3b8" fontSize="10" fontWeight="bold">10 / 100%</text>
+                  <text x="18" y="69" fill="#94a3b8" fontSize="10">5 / 50%</text>
+                  <text x="18" y="114" fill="#94a3b8" fontSize="10">1 / 10%</text>
+
+                  {(() => {
+                    const chartData = [...progressLogs].reverse().slice(-10);
+                    const total = chartData.length;
+                    const stepX = 420 / Math.max(1, total - 1);
+
+                    const painPoints = chartData.map((d, i) => ({
+                      x: 50 + i * stepX,
+                      y: 110 - ((d.pain_score - 1) / 9) * 90,
+                      val: d.pain_score,
+                    }));
+
+                    const sleepPoints = chartData.map((d, i) => ({
+                      x: 50 + i * stepX,
+                      y: 110 - ((d.sleep_score - 1) / 9) * 90,
+                      val: d.sleep_score,
+                    }));
+
+                    const adhPoints = chartData.map((d, i) => ({
+                      x: 50 + i * stepX,
+                      y: 110 - ((d.adherence_pct || 0) / 100) * 90,
+                      val: d.adherence_pct,
+                    }));
+
+                    const makePath = (pts: { x: number; y: number }[]) =>
+                      pts.reduce((acc, p, idx) => `${acc} ${idx === 0 ? 'M' : 'L'} ${p.x} ${p.y}`, '');
+
+                    return (
+                      <>
+                        {/* Pain line */}
+                        <path d={makePath(painPoints)} fill="none" stroke="#0D3B2E" strokeWidth="2.5" />
+                        {painPoints.map((p, i) => (
+                          <circle key={`pain-${i}`} cx={p.x} cy={p.y} r="4" fill="#0D3B2E" />
+                        ))}
+
+                        {/* Sleep line */}
+                        <path d={makePath(sleepPoints)} fill="none" stroke="#2563EB" strokeWidth="2" strokeDasharray="4 2" />
+                        {sleepPoints.map((p, i) => (
+                          <circle key={`sleep-${i}`} cx={p.x} cy={p.y} r="3" fill="#2563EB" />
+                        ))}
+
+                        {/* Adherence line */}
+                        <path d={makePath(adhPoints)} fill="none" stroke="#D4AF37" strokeWidth="2" />
+                        {adhPoints.map((p, i) => (
+                          <circle key={`adh-${i}`} cx={p.x} cy={p.y} r="3" fill="#D4AF37" />
+                        ))}
+                      </>
+                    );
+                  })()}
+                </svg>
+              </div>
+            )}
+          </div>
+
+          {/* Table: Riwayat Tensi, Gula Darah, & Catatan Pasien */}
+          <div className="space-y-2 pt-2">
+            <h4 className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+              Tabel Riwayat Pengukuran Mandiri & Catatan Pasien
+            </h4>
+
+            {progressLogs.length === 0 ? (
+              <div className="rounded-xl bg-gray-50 p-6 text-center text-xs text-gray-400">
+                Belum ada riwayat check-in dari pasien ini.
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-gray-100">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-gray-50/80 text-gray-500 uppercase font-bold text-[10px]">
+                      <th className="py-2.5 px-3">Waktu (WITA)</th>
+                      <th className="py-2.5 px-3">Tensi (mmHg)</th>
+                      <th className="py-2.5 px-3">Gula Darah</th>
+                      <th className="py-2.5 px-3">Nyeri / Tidur / Stres</th>
+                      <th className="py-2.5 px-3">Kepatuhan</th>
+                      <th className="py-2.5 px-3">Catatan Pasien</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 font-medium text-gray-700">
+                    {progressLogs.map((log) => {
+                      const isBpRed =
+                        (log.systolic_bp && log.systolic_bp >= 180) ||
+                        (log.diastolic_bp && log.diastolic_bp >= 120);
+                      const isBpYellow = !isBpRed && log.systolic_bp && log.systolic_bp >= 150;
+
+                      const isBsRed =
+                        log.blood_sugar_mgdl &&
+                        (log.blood_sugar_mgdl < 70 || log.blood_sugar_mgdl >= 300);
+                      const isBsYellow =
+                        !isBsRed && log.blood_sugar_mgdl && log.blood_sugar_mgdl >= 200;
+
+                      return (
+                        <tr key={log.id} className="hover:bg-gray-50/50">
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            <span className="font-bold text-gray-900">
+                              {new Date(log.logged_at).toLocaleDateString('id-ID', {
+                                day: 'numeric',
+                                month: 'short',
+                                year: 'numeric',
+                              })}
+                            </span>
+                            <span className="block text-[10px] text-gray-400 font-mono">
+                              {formatWITATime(log.logged_at)}
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            {log.systolic_bp ? (
+                              <span
+                                className={`inline-block px-2 py-0.5 rounded-md font-mono font-bold text-[11px] ${
+                                  isBpRed
+                                    ? 'bg-red-100 text-red-800 border border-red-300'
+                                    : isBpYellow
+                                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                    : 'bg-emerald-50 text-emerald-800'
+                                }`}
+                              >
+                                {log.systolic_bp}/{log.diastolic_bp || '-'}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 text-[11px]">-</span>
+                            )}
+                          </td>
+
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            {log.blood_sugar_mgdl ? (
+                              <span
+                                className={`inline-block px-2 py-0.5 rounded-md font-mono font-bold text-[11px] ${
+                                  isBsRed
+                                    ? 'bg-red-100 text-red-800 border border-red-300'
+                                    : isBsYellow
+                                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                    : 'bg-blue-50 text-blue-800'
+                                }`}
+                              >
+                                {log.blood_sugar_mgdl} mg/dL
+                                {log.blood_sugar_context && (
+                                  <span className="text-[9px] font-normal block opacity-80">
+                                    {log.blood_sugar_context}
+                                  </span>
+                                )}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 text-[11px]">-</span>
+                            )}
+                          </td>
+
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            <span className="font-mono text-xs">
+                              <strong className="text-emerald-800">{log.pain_score}</strong> /{' '}
+                              <span className="text-blue-700">{log.sleep_score}</span> /{' '}
+                              <span className="text-purple-700">{log.stress_score}</span>
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            <span className="rounded-md bg-gray-100 px-2 py-0.5 font-bold font-mono text-[11px] text-gray-700">
+                              {log.adherence_pct}%
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-3 max-w-xs text-xs text-gray-600 truncate" title={log.patient_note || ''}>
+                            {log.patient_note || '-'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
 

@@ -13,6 +13,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { signPatientSession, verifyPatientSession } from '../src/lib/patient/auth.ts';
 import { runAgent7Monitor } from '../src/lib/agents/agent7-monitor.ts';
+import { getWITAParts, createWITAISOString } from '../src/lib/utils/timezone.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -281,6 +282,137 @@ for (const file of clientFiles) {
 }
 
 assert(totalLeakFound === 0, 'Zero Secret Leak: 0 variabel rahasia ditemukan di seluruh file komponen klien');
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 6: DETEKSI DETERMINISTIK TENSI, GULA DARAH & WEEKLY CHECK-IN H+7
+// -----------------------------------------------------------------------------
+console.log('\n\x1b[36m[TEST SUITE 6] Guardrail Klinis Tensi, Gula Darah & Trigger WEEKLY_CHECKIN (H+7)\x1b[0m');
+
+// 1. Deteksi Krisis Hipertensi (185/120) -> RED Flag
+const bpCrisisResult = await runAgent7Monitor({
+  currentLog: {
+    pain_score: 4,
+    sleep_score: 7,
+    stress_score: 5,
+    systolic_bp: 185,
+    diastolic_bp: 120,
+  },
+  history: [],
+  patientName: 'Bapak Mansyur',
+});
+
+assert(bpCrisisResult.alert_level === 'RED', 'Krisis hipertensi (185/120) menghasilkan alert level RED');
+assert(bpCrisisResult.requires_adaptation === true, 'Krisis hipertensi memicu requires_adaptation = true');
+assert(
+  Boolean(bpCrisisResult.urgent_patient_warning && bpCrisisResult.urgent_patient_warning.includes('Krisis Hipertensi')),
+  'Peringatan pasien memuat keterangan krisis hipertensi'
+);
+assert(
+  Boolean(bpCrisisResult.urgent_patient_warning && bpCrisisResult.urgent_patient_warning.includes('DILARANG menghentikan atau mengubah dosis obat')),
+  'Guardrail mutlak: memuat larangan menghentikan obat resep dokter secara mendadak'
+);
+
+// 2. Deteksi Hipoglikemia Berat (< 70 mg/dL, misal 62) -> RED Flag
+const hypoglycemiaResult = await runAgent7Monitor({
+  currentLog: {
+    pain_score: 3,
+    sleep_score: 6,
+    stress_score: 4,
+    blood_sugar_mgdl: 62,
+    blood_sugar_context: 'PUASA',
+  },
+  history: [],
+  patientName: 'Ibu Ratna',
+});
+
+assert(hypoglycemiaResult.alert_level === 'RED', 'Gula darah 62 mg/dL terdeteksi darurat RED (Hipoglikemia)');
+assert(
+  Boolean(hypoglycemiaResult.urgent_patient_warning && hypoglycemiaResult.urgent_patient_warning.includes('Hipoglikemia Darurat')),
+  'Peringatan pasien memuat peringatan hipoglikemia darurat'
+);
+
+// 3. Deteksi Hiperglikemia Berat (>= 300 mg/dL, misal 320) -> RED Flag
+const severeHyperglycemiaResult = await runAgent7Monitor({
+  currentLog: {
+    pain_score: 4,
+    sleep_score: 6,
+    stress_score: 5,
+    blood_sugar_mgdl: 320,
+    blood_sugar_context: 'SEWAKTU',
+  },
+  history: [],
+  patientName: 'Bapak Hendra',
+});
+
+assert(severeHyperglycemiaResult.alert_level === 'RED', 'Gula darah 320 mg/dL terdeteksi darurat RED (Hiperglikemia Berat)');
+assert(
+  Boolean(severeHyperglycemiaResult.urgent_patient_warning && severeHyperglycemiaResult.urgent_patient_warning.includes('Hiperglikemia Berat')),
+  'Peringatan pasien memuat peringatan hiperglikemia berat'
+);
+
+// 4. Deteksi Tensi & Gula Darah Normal (125/80 mmHg & 115 mg/dL) -> GREEN / NONE
+const normalVitalsResult = await runAgent7Monitor({
+  currentLog: {
+    pain_score: 3,
+    sleep_score: 8,
+    stress_score: 3,
+    systolic_bp: 125,
+    diastolic_bp: 80,
+    blood_sugar_mgdl: 115,
+    blood_sugar_context: 'PUASA',
+  },
+  history: [
+    { pain_score: 7, sleep_score: 5, stress_score: 6, logged_at: new Date(Date.now() - 5 * 86400000).toISOString() },
+  ],
+  patientName: 'Ibu Nurhayati',
+});
+
+assert(normalVitalsResult.alert_level === 'NONE', 'Tensi 125/80 dan gula 115 mg/dL menghasilkan alert NONE (Hijau/Stabil)');
+assert(normalVitalsResult.requires_adaptation === false, 'Tanda vital normal tidak memicu evaluasi adaptasi palsu');
+assert(normalVitalsResult.urgent_patient_warning === null, 'Peringatan darurat pasien bernilai null pada kondisi normal');
+
+// 5. Penjadwalan 3 Trigger Pasca-Sesi Saat COMPLETED: POST_REVIEW, H_PLUS_3, WEEKLY_CHECKIN (H+7)
+function calculatePostSessionTriggers(completedTimeMs) {
+  const postReviewIso = new Date(completedTimeMs + 2 * 60 * 60 * 1000).toISOString();
+
+  // H+3 days at 10:00 WITA
+  const hPlus3Date = new Date(completedTimeMs + 3 * 24 * 60 * 60 * 1000);
+  const hPlus3Parts = getWITAParts(hPlus3Date);
+  const hPlus3Iso = createWITAISOString(
+    hPlus3Parts.year,
+    hPlus3Parts.month,
+    hPlus3Parts.day,
+    10,
+    0,
+    0
+  );
+
+  // H+7 days at 09:30 WITA
+  const hPlus7Date = new Date(completedTimeMs + 7 * 24 * 60 * 60 * 1000);
+  const hPlus7Parts = getWITAParts(hPlus7Date);
+  const hPlus7Iso = createWITAISOString(
+    hPlus7Parts.year,
+    hPlus7Parts.month,
+    hPlus7Parts.day,
+    9,
+    30,
+    0
+  );
+
+  return {
+    postReviewIso,
+    hPlus3Iso,
+    hPlus7Iso,
+  };
+}
+
+const testNowMs = new Date('2026-11-26T14:00:00+08:00').getTime();
+const triggers = calculatePostSessionTriggers(testNowMs);
+
+assert(Boolean(triggers.postReviewIso), 'Trigger POST_REVIEW (+2 jam) terhitung');
+assert(triggers.hPlus3Iso.includes('10:00:00+08:00'), 'Trigger H_PLUS_3 dijadwalkan tepat jam 10:00 WITA');
+assert(triggers.hPlus7Iso.includes('09:30:00+08:00'), 'Trigger WEEKLY_CHECKIN dijadwalkan tepat jam 09:30 WITA pada H+7');
+assert(triggers.hPlus7Iso.startsWith('2026-12-03'), 'Trigger WEEKLY_CHECKIN tepat 7 hari setelah 26 November (3 Desember 2026)');
 
 // -----------------------------------------------------------------------------
 // REKAPITULASI HASIL TEST GATE FASE 4

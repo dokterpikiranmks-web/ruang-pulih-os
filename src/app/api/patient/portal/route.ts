@@ -87,7 +87,7 @@ export async function GET(request: Request) {
     // 4. Fetch Progress Logs for recovery trends
     const { data: rawLogs } = await admin
       .from('progress_logs')
-      .select('id, pain_score, sleep_score, stress_score, adherence_pct, patient_note, ai_adaptation_alert, logged_at')
+      .select('id, pain_score, sleep_score, stress_score, adherence_pct, patient_note, ai_adaptation_alert, systolic_bp, diastolic_bp, blood_sugar_mgdl, blood_sugar_context, completed_habits_json, logged_at')
       .eq('patient_id', patient.id)
       .order('logged_at', { ascending: true })
       .limit(30);

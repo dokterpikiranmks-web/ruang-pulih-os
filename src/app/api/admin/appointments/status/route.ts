@@ -60,7 +60,7 @@ export async function POST(request: Request) {
 
     const nowMs = Date.now();
 
-    // 3. Logic when status becomes COMPLETED -> Enqueue POST_REVIEW (+2h) and H_PLUS_3 (+3 days)
+    // 3. Logic when status becomes COMPLETED -> Enqueue POST_REVIEW (+2h), H_PLUS_3 (+3 days), and WEEKLY_CHECKIN (H+7)
     if (payload.status === 'COMPLETED') {
       const postReviewTime = new Date(nowMs + 2 * 60 * 60 * 1000).toISOString();
 
@@ -76,6 +76,19 @@ export async function POST(request: Request) {
         0
       );
 
+      // H+7 days at 09:30 WITA
+      const hPlus7Date = new Date(nowMs + 7 * 24 * 60 * 60 * 1000);
+      const hPlus7Parts = getWITAParts(hPlus7Date);
+      const hPlus7Iso = createWITAISOString(
+        hPlus7Parts.year,
+        hPlus7Parts.month,
+        hPlus7Parts.day,
+        9,
+        30,
+        0
+      );
+
+      const pinLast4 = patient.whatsapp ? patient.whatsapp.slice(-4) : '';
       const reviewUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://ruangpulihmakassar.com'}/review/${payload.appointment_id}`;
       const patientPwaUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://ruangpulihmakassar.com'}/p/${patient.magic_token}`;
 
@@ -93,6 +106,14 @@ Bagaimana perkembangan keluhan dan rasa nyaman di tubuh Anda setelah beberapa ha
 Jika Anda ingin menjadwalkan sesi terapi lanjutan untuk melanjutkan penguraian akar masalah, silakan hubungi kami atau buka kartu sesi di aplikasi pasien Anda:
 📱 ${patientPwaUrl}`;
 
+      const weeklyCheckInBody = `Halo Bapak/Ibu *${patient.full_name}*, sudah 1 minggu berlalu sejak sesi terapi Anda di *Ruang Pulih Makassar*.
+
+Bagaimana kabar tubuh dan pergerakan Anda hari ini? Mohon luangkan waktu 30 detik untuk mengisi check-in progres mingguan Anda di aplikasi pasien:
+📱 ${patientPwaUrl}
+*(Gunakan 4 digit terakhir nomor WhatsApp Anda: **${pinLast4}** sebagai PIN masuk)*
+
+Semoga proses pemulihan Anda terus berjalan lancar dan semakin nyaman!`;
+
       await admin.from('wa_queue').insert([
         {
           appointment_id: payload.appointment_id,
@@ -109,6 +130,15 @@ Jika Anda ingin menjadwalkan sesi terapi lanjutan untuk melanjutkan penguraian a
           trigger_type: 'H_PLUS_3',
           scheduled_for: hPlus3Iso,
           message_body: hPlus3Body,
+          status: 'PENDING',
+          retry_count: 0,
+        },
+        {
+          appointment_id: payload.appointment_id,
+          patient_id: patient.id,
+          trigger_type: 'WEEKLY_CHECKIN',
+          scheduled_for: hPlus7Iso,
+          message_body: weeklyCheckInBody,
           status: 'PENDING',
           retry_count: 0,
         },

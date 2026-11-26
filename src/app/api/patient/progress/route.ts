@@ -14,6 +14,11 @@ const ProgressCheckInSchema = z.object({
   stress_score: z.number().int().min(1).max(10),
   adherence_pct: z.number().int().min(0).max(100).default(100),
   patient_note: z.string().max(500).optional().default(''),
+  systolic_bp: z.number().int().min(60).max(260).optional().nullable(),
+  diastolic_bp: z.number().int().min(40).max(160).optional().nullable(),
+  blood_sugar_mgdl: z.number().int().min(30).max(600).optional().nullable(),
+  blood_sugar_context: z.enum(['PUASA', 'SEWAKTU', '2_JAM_PP']).optional().nullable(),
+  completed_habits_json: z.array(z.string()).optional().default([]),
 });
 
 export async function POST(request: Request) {
@@ -72,6 +77,11 @@ export async function POST(request: Request) {
       stress_score: payload.stress_score,
       adherence_pct: payload.adherence_pct,
       patient_note: payload.patient_note,
+      systolic_bp: payload.systolic_bp,
+      diastolic_bp: payload.diastolic_bp,
+      blood_sugar_mgdl: payload.blood_sugar_mgdl,
+      blood_sugar_context: payload.blood_sugar_context,
+      completed_habits_json: payload.completed_habits_json,
       logged_at: new Date().toISOString(),
     };
 
@@ -93,6 +103,11 @@ export async function POST(request: Request) {
         patient_note: payload.patient_note || null,
         ai_adaptation_alert: adaptationResult.alert_message || null,
         alert_acknowledged: false,
+        systolic_bp: payload.systolic_bp || null,
+        diastolic_bp: payload.diastolic_bp || null,
+        blood_sugar_mgdl: payload.blood_sugar_mgdl || null,
+        blood_sugar_context: payload.blood_sugar_context || null,
+        completed_habits_json: payload.completed_habits_json || [],
       })
       .select('id, logged_at')
       .single();
@@ -111,6 +126,7 @@ export async function POST(request: Request) {
       logged_at: insertedLog.logged_at,
       adaptation_alert: adaptationResult.alert_message,
       alert_level: adaptationResult.alert_level,
+      urgent_patient_warning: adaptationResult.urgent_patient_warning || null,
     });
   } catch (err) {
     if (err instanceof z.ZodError) {

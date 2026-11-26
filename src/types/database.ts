@@ -23,7 +23,8 @@ export type WATriggerType =
   | 'H_MINUS_1'
   | 'H_MINUS_2H'
   | 'POST_REVIEW'
-  | 'H_PLUS_3';
+  | 'H_PLUS_3'
+  | 'WEEKLY_CHECKIN';
 
 export type WAQueueStatus = 'PENDING' | 'SENT' | 'FAILED' | 'CANCELLED';
 
@@ -269,6 +270,11 @@ export interface Database {
           patient_note: string | null;
           ai_adaptation_alert: string | null;
           alert_acknowledged: boolean;
+          systolic_bp: number | null;
+          diastolic_bp: number | null;
+          blood_sugar_mgdl: number | null;
+          blood_sugar_context: string | null;
+          completed_habits_json: Json | null;
           logged_at: string;
         };
         Insert: {
@@ -281,6 +287,11 @@ export interface Database {
           patient_note?: string | null;
           ai_adaptation_alert?: string | null;
           alert_acknowledged?: boolean;
+          systolic_bp?: number | null;
+          diastolic_bp?: number | null;
+          blood_sugar_mgdl?: number | null;
+          blood_sugar_context?: string | null;
+          completed_habits_json?: Json | null;
           logged_at?: string;
         };
         Update: {
@@ -293,6 +304,11 @@ export interface Database {
           patient_note?: string | null;
           ai_adaptation_alert?: string | null;
           alert_acknowledged?: boolean;
+          systolic_bp?: number | null;
+          diastolic_bp?: number | null;
+          blood_sugar_mgdl?: number | null;
+          blood_sugar_context?: string | null;
+          completed_habits_json?: Json | null;
           logged_at?: string;
         };
         Relationships: [];
