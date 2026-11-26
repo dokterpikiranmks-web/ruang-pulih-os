@@ -19,9 +19,13 @@ import {
   Copy,
   ExternalLink,
   Check,
+  Plus,
+  Pencil,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { formatWITADateTime, formatWITATime } from '@/lib/utils/timezone';
+import ManualBookingModal from '@/components/admin/ManualBookingModal';
+import EditAppointmentModal from '@/components/admin/EditAppointmentModal';
 
 interface AppointmentRecord {
   id: string;
@@ -29,7 +33,7 @@ interface AppointmentRecord {
   slot_start: string;
   slot_end: string;
   package_type: string;
-  status: 'BOOKED' | 'CONFIRMED' | 'COMPLETED' | 'NO_SHOW' | 'RESCHEDULED';
+  status: 'BOOKED' | 'CONFIRMED' | 'COMPLETED' | 'NO_SHOW' | 'RESCHEDULED' | 'CANCELLED';
   amount_paid_idr: number;
   notes: string | null;
   patients: {
@@ -98,6 +102,10 @@ export default function AdminDashboardPage() {
   const [activeModalAppt, setActiveModalAppt] = useState<AppointmentRecord | null>(null);
   const [modalAmountPaid, setModalAmountPaid] = useState<number>(150000);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+  // Manual booking and edit modals
+  const [isManualBookingOpen, setIsManualBookingOpen] = useState(false);
+  const [editingAppointment, setEditingAppointment] = useState<AppointmentRecord | null>(null);
 
   const fetchDashboardData = useCallback(async () => {
     setIsLoading(true);
@@ -326,22 +334,33 @@ export default function AdminDashboardPage() {
               </p>
             </div>
 
-            {/* Filter pills */}
-            <div className="flex flex-wrap gap-1.5 text-xs">
-              {['ALL', 'BOOKED', 'CONFIRMED', 'COMPLETED', 'NO_SHOW'].map((st) => (
-                <button
-                  key={st}
-                  type="button"
-                  onClick={() => setFilterStatus(st)}
-                  className={`rounded-lg px-2.5 py-1 font-semibold transition ${
-                    filterStatus === st
-                      ? 'bg-klinik-primary text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  {st}
-                </button>
-              ))}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsManualBookingOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-klinik-primary px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-klinik-primaryLight transition"
+              >
+                <Plus className="h-4 w-4 text-klinik-gold" />
+                <span>+ Tambah Jadwal Manual</span>
+              </button>
+
+              {/* Filter pills */}
+              <div className="flex flex-wrap gap-1.5 text-xs">
+                {['ALL', 'CONFIRMED', 'BOOKED', 'COMPLETED', 'NO_SHOW', 'CANCELLED'].map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setFilterStatus(st)}
+                    className={`rounded-lg px-2.5 py-1 font-semibold transition ${
+                      filterStatus === st
+                        ? 'bg-klinik-primary text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {st}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -412,6 +431,8 @@ export default function AdminDashboardPage() {
                                 ? 'bg-blue-100 text-blue-800'
                                 : appt.status === 'NO_SHOW'
                                 ? 'bg-red-100 text-red-800'
+                                : appt.status === 'CANCELLED'
+                                ? 'bg-gray-100 text-gray-600 line-through'
                                 : 'bg-amber-100 text-amber-800'
                             }`}
                           >
@@ -430,6 +451,17 @@ export default function AdminDashboardPage() {
                         </td>
 
                         <td className="py-3 px-3 text-right whitespace-nowrap space-x-1.5">
+                          {/* Edit / Reschedule Button */}
+                          <button
+                            type="button"
+                            onClick={() => setEditingAppointment(appt)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-gray-700 hover:bg-gray-50 transition"
+                            title="Edit atau geser jadwal"
+                          >
+                            <Pencil className="h-3 w-3 text-gray-500" />
+                            <span>Edit</span>
+                          </button>
+
                           {/* Complete Button */}
                           {!isCompleted && !isNoShow && (
                             <>
@@ -725,6 +757,24 @@ export default function AdminDashboardPage() {
           </div>
         </div>
       )}
+      {/* Manual Booking Modal */}
+      <ManualBookingModal
+        isOpen={isManualBookingOpen}
+        onClose={() => setIsManualBookingOpen(false)}
+        onSuccess={() => {
+          fetchDashboardData();
+        }}
+      />
+
+      {/* Edit / Reschedule Appointment Modal */}
+      <EditAppointmentModal
+        isOpen={!!editingAppointment}
+        appointment={editingAppointment}
+        onClose={() => setEditingAppointment(null)}
+        onSuccess={() => {
+          fetchDashboardData();
+        }}
+      />
     </div>
   );
 }

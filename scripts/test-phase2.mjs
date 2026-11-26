@@ -202,6 +202,87 @@ assert(
 );
 
 // -----------------------------------------------------------------------------
+// TEST SUITE 5: ADMIN MANUAL BOOKING & APPOINTMENT EDIT / RESCHEDULE
+// -----------------------------------------------------------------------------
+console.log('\n\x1b[36m[TEST SUITE 5] Admin Manual Booking & Edit / Reschedule Schemas\x1b[0m');
+
+// 1. Manual Book Schema Zod validation
+const AdminManualBookSchema = z.object({
+  patient_id: z.string().uuid().optional().nullable(),
+  full_name: z.string().min(2, 'Nama lengkap minimal 2 karakter'),
+  whatsapp: z.string().min(8, 'Nomor WhatsApp tidak valid'),
+  age: z.coerce.number().min(1).max(120).optional().nullable(),
+  address: z.string().optional().nullable(),
+  complaint_summary: z.string().optional().nullable(),
+  package_type: z.enum(['SINGLE_150K', 'PACKAGE_3X_400K']),
+  slot_start: z.string().min(10, 'Waktu slot tidak valid'),
+  send_wa_notification: z.boolean().optional().default(true),
+});
+
+const validManualBook = AdminManualBookSchema.safeParse({
+  full_name: 'Bapak Ahmad',
+  whatsapp: '081242334455',
+  age: 52,
+  address: 'Batua Raya',
+  complaint_summary: 'Kontrol sesi ke-2 saraf kejepit',
+  package_type: 'SINGLE_150K',
+  slot_start: '2026-11-27T10:00:00+08:00',
+  send_wa_notification: true,
+});
+assert(validManualBook.success, 'Validasi Zod manual booking berhasil untuk data lengkap');
+if (validManualBook.success) {
+  assert(validManualBook.data.send_wa_notification === true, 'Default atau explicit send_wa_notification bernilai true');
+}
+
+const silentManualBook = AdminManualBookSchema.safeParse({
+  full_name: 'Ibu Fatimah',
+  whatsapp: '085299887766',
+  package_type: 'PACKAGE_3X_400K',
+  slot_start: '2026-11-27T16:00:00+08:00',
+  send_wa_notification: false,
+});
+assert(silentManualBook.success, 'Manual booking tanpa notifikasi WA (silent mode) valid');
+if (silentManualBook.success) {
+  assert(silentManualBook.data.send_wa_notification === false, 'send_wa_notification false untuk silent mode');
+}
+
+// 2. Admin Edit Appointment Schema Zod validation
+const AdminEditAppointmentSchema = z.object({
+  slot_start: z.string().min(10).optional(),
+  status: z
+    .enum(['BOOKED', 'CONFIRMED', 'COMPLETED', 'NO_SHOW', 'RESCHEDULED', 'CANCELLED'])
+    .optional(),
+  complaint_summary: z.string().optional().nullable(),
+  package_type: z.enum(['SINGLE_150K', 'PACKAGE_3X_400K']).optional(),
+  amount_paid_idr: z.number().int().min(0).optional(),
+  notify_patient_wa: z.boolean().optional().default(false),
+});
+
+const validCancel = AdminEditAppointmentSchema.safeParse({
+  status: 'CANCELLED',
+});
+assert(validCancel.success, 'Status CANCELLED diterima valid untuk pembatalan jadwal');
+
+const validReschedule = AdminEditAppointmentSchema.safeParse({
+  slot_start: '2026-11-28T19:00:00+08:00',
+  notify_patient_wa: true,
+  complaint_summary: 'Pasien minta geser ke sesi malam',
+});
+assert(validReschedule.success, 'Reschedule sesi ke slot baru dengan notifikasi WA valid');
+
+// 3. Status exclusion in idx_unique_active_slot (WHERE status IN ('BOOKED', 'CONFIRMED'))
+function isSlotLockedByStatus(status) {
+  const activeLockStatuses = new Set(['BOOKED', 'CONFIRMED']);
+  return activeLockStatuses.has(status);
+}
+
+assert(isSlotLockedByStatus('BOOKED') === true, 'Status BOOKED mengunci slot waktu');
+assert(isSlotLockedByStatus('CONFIRMED') === true, 'Status CONFIRMED mengunci slot waktu');
+assert(isSlotLockedByStatus('CANCELLED') === false, 'Status CANCELLED melepas slot waktu (slot kembali tersedia)');
+assert(isSlotLockedByStatus('RESCHEDULED') === false, 'Status RESCHEDULED melepas slot lama');
+assert(isSlotLockedByStatus('COMPLETED') === false, 'Status COMPLETED melepas lock slot aktif');
+
+// -----------------------------------------------------------------------------
 // TEST SUMMARY & VERDICT
 // -----------------------------------------------------------------------------
 console.log('\n======================================================');

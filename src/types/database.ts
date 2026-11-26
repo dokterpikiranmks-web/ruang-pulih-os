@@ -13,7 +13,8 @@ export type AppointmentStatus =
   | 'CONFIRMED'
   | 'COMPLETED'
   | 'NO_SHOW'
-  | 'RESCHEDULED';
+  | 'RESCHEDULED'
+  | 'CANCELLED';
 
 export type ProtocolStatus = 'DRAFT_REVIEW' | 'PUBLISHED';
 
