@@ -15,10 +15,37 @@ jobs:
 
     steps:
       - name: Trigger WA Queue Processing Worker
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          RAW_APP_URL: ${{ secrets.APP_URL || secrets.NEXT_PUBLIC_APP_URL || 'https://ruang-pulih-os.vercel.app' }}
         run: |
           echo "Triggering Ruang Pulih WhatsApp Queue Processing Worker..."
-          curl -fsS -X POST "${{ secrets.APP_URL }}/api/cron/process-wa-queue" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::Secret CRON_SECRET belum terpasang di GitHub Repository Secrets! Buka Repo -> Settings -> Secrets and variables -> Actions, lalu tambahkan Secret 'CRON_SECRET'."
+            exit 1
+          fi
+
+          # Strip trailing slash to guarantee no double slash (//api/cron/...)
+          BASE_URL="${RAW_APP_URL%/}"
+          TARGET_ENDPOINT="${BASE_URL}/api/cron/process-wa-queue"
+          echo "Target Endpoint: ${TARGET_ENDPOINT}"
+
+          HTTP_RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "$TARGET_ENDPOINT" \
+            -H "Authorization: Bearer $CRON_SECRET" \
             -H "Content-Type: application/json" \
-            --max-time 30
-          echo "WA Queue Processing Worker completed successfully."
+            -L \
+            --max-time 30)
+
+          HTTP_BODY=$(echo "$HTTP_RESPONSE" | sed -e '$d')
+          HTTP_STATUS=$(echo "$HTTP_RESPONSE" | tail -n1 | sed -e 's/HTTP_STATUS://')
+
+          echo "Server HTTP Status: $HTTP_STATUS"
+          echo "Response Body: $HTTP_BODY"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "WA Queue Processing Worker completed successfully."
+          else
+            echo "::error::Cron Worker gagal dengan HTTP Status $HTTP_STATUS: $HTTP_BODY"
+            exit 1
+          fi
