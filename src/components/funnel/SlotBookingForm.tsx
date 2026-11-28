@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Calendar, Clock, User, Phone, MapPin, FileText, AlertCircle, Loader2 } from 'lucide-react';
 import { formatWITADate } from '@/lib/utils/timezone';
+import { getStoredUTM } from '@/lib/utils/utm';
 
 export interface BookingSuccessData {
   appointment_id: string;
@@ -137,6 +138,7 @@ export default function SlotBookingForm({
     setIsSubmitting(true);
 
     try {
+      const utm = getStoredUTM();
       const res = await fetch('/api/appointments/book', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -150,6 +152,11 @@ export default function SlotBookingForm({
           package_type: packageType,
           slot_start: selectedSlot,
           disclaimer_accepted: true,
+          utm_source: utm.utm_source,
+          utm_medium: utm.utm_medium,
+          utm_campaign: utm.utm_campaign,
+          utm_content: utm.utm_content,
+          fbclid: utm.fbclid,
         }),
       });
 

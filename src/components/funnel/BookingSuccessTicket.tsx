@@ -11,13 +11,21 @@ export interface BookingSuccessTicketProps {
 }
 
 export default function BookingSuccessTicket({ booking }: BookingSuccessTicketProps) {
-  // Trigger Meta Pixel 'Schedule' event on mount
+  // Trigger Meta Pixel 'Schedule' event on mount (Privacy-Safe: generic content_name & value only)
   useEffect(() => {
-    trackPixelEvent('Schedule', {
-      appointment_id: booking.appointment_id,
-      package_type: booking.package_type,
-      time: booking.time_formatted,
-    });
+    const is3X = booking.package_type === 'PACKAGE_3X_400K';
+    const genericPackageName = is3X ? 'program_b' : 'program_a';
+    const packageValue = is3X ? 400000 : 150000;
+
+    trackPixelEvent(
+      'Schedule',
+      {
+        content_name: genericPackageName,
+        value: packageValue,
+        currency: 'IDR',
+      },
+      `schedule_${booking.appointment_id}`
+    );
   }, [booking]);
 
   const bookingCode = `#RP-${booking.appointment_id.slice(0, 8).toUpperCase()}`;

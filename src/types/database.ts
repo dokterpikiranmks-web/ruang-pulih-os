@@ -42,7 +42,10 @@ export interface Database {
           triage_summary: string | null;
           disclaimer_accepted: boolean;
           utm_source: string | null;
+          utm_medium: string | null;
           utm_campaign: string | null;
+          utm_content: string | null;
+          fbclid: string | null;
           created_at: string;
         };
         Insert: {
@@ -55,7 +58,10 @@ export interface Database {
           triage_summary?: string | null;
           disclaimer_accepted?: boolean;
           utm_source?: string | null;
+          utm_medium?: string | null;
           utm_campaign?: string | null;
+          utm_content?: string | null;
+          fbclid?: string | null;
           created_at?: string;
         };
         Update: {
@@ -68,7 +74,10 @@ export interface Database {
           triage_summary?: string | null;
           disclaimer_accepted?: boolean;
           utm_source?: string | null;
+          utm_medium?: string | null;
           utm_campaign?: string | null;
+          utm_content?: string | null;
+          fbclid?: string | null;
           created_at?: string;
         };
         Relationships: [];
@@ -117,6 +126,11 @@ export interface Database {
           status: AppointmentStatus;
           amount_paid_idr: number;
           notes: string | null;
+          utm_source: string | null;
+          utm_medium: string | null;
+          utm_campaign: string | null;
+          utm_content: string | null;
+          fbclid: string | null;
           created_at: string;
         };
         Insert: {
@@ -129,6 +143,11 @@ export interface Database {
           status?: AppointmentStatus;
           amount_paid_idr?: number;
           notes?: string | null;
+          utm_source?: string | null;
+          utm_medium?: string | null;
+          utm_campaign?: string | null;
+          utm_content?: string | null;
+          fbclid?: string | null;
           created_at?: string;
         };
         Update: {
@@ -141,6 +160,11 @@ export interface Database {
           status?: AppointmentStatus;
           amount_paid_idr?: number;
           notes?: string | null;
+          utm_source?: string | null;
+          utm_medium?: string | null;
+          utm_campaign?: string | null;
+          utm_content?: string | null;
+          fbclid?: string | null;
           created_at?: string;
         };
         Relationships: [];

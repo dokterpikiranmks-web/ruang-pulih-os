@@ -29,13 +29,18 @@ export default function TriageResult({ analysis, onProceedToBooking }: TriageRes
   const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
   const [forceShowBooking, setForceShowBooking] = useState(analysis.lead_temperature === 'HOT');
 
-  // Trigger Meta Pixel 'Lead' event on mount
+  // Trigger Meta Pixel 'Lead' event on mount (Privacy-Safe: generic program code only)
   useEffect(() => {
-    trackPixelEvent('Lead', {
-      severity: analysis.severity_label,
-      temperature: analysis.lead_temperature,
-      readiness_score: analysis.readiness_score,
-    });
+    const genericProgram =
+      analysis.suggested_package === 'SINGLE_150K' ? 'program_a' : 'program_b';
+    trackPixelEvent(
+      'Lead',
+      {
+        content_name: genericProgram,
+        content_category: 'consultation_assessment',
+      },
+      `lead_${genericProgram}`
+    );
   }, [analysis]);
 
   const isColdLead = analysis.lead_temperature === 'COLD' && !forceShowBooking;

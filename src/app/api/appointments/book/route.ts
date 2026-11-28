@@ -24,6 +24,11 @@ const BookAppointmentSchema = z.object({
   package_type: z.enum(['SINGLE_150K', 'PACKAGE_3X_400K']),
   slot_start: z.string().min(10, 'Waktu slot tidak valid'),
   disclaimer_accepted: z.boolean(),
+  utm_source: z.string().optional().nullable(),
+  utm_medium: z.string().optional().nullable(),
+  utm_campaign: z.string().optional().nullable(),
+  utm_content: z.string().optional().nullable(),
+  fbclid: z.string().optional().nullable(),
 });
 
 export async function POST(request: Request) {
@@ -129,8 +134,28 @@ export async function POST(request: Request) {
       patientId = newPatient.id;
     }
 
-    // 5. Update leads_triage disclaimer acceptance if lead_id present
+    // 5. Update leads_triage disclaimer acceptance and fetch UTM fallback if needed
+    let utmSource = payload.utm_source || null;
+    let utmMedium = payload.utm_medium || null;
+    let utmCampaign = payload.utm_campaign || null;
+    let utmContent = payload.utm_content || null;
+    let fbclid = payload.fbclid || null;
+
     if (payload.lead_id) {
+      const { data: leadData } = await admin
+        .from('leads_triage')
+        .select('utm_source, utm_medium, utm_campaign, utm_content, fbclid')
+        .eq('id', payload.lead_id)
+        .maybeSingle();
+
+      if (leadData) {
+        utmSource = utmSource || leadData.utm_source || null;
+        utmMedium = utmMedium || leadData.utm_medium || null;
+        utmCampaign = utmCampaign || leadData.utm_campaign || null;
+        utmContent = utmContent || leadData.utm_content || null;
+        fbclid = fbclid || leadData.fbclid || null;
+      }
+
       await admin
         .from('leads_triage')
         .update({ disclaimer_accepted: true })
@@ -149,6 +174,11 @@ export async function POST(request: Request) {
         status: 'BOOKED',
         amount_paid_idr: 0,
         notes: payload.complaint_summary,
+        utm_source: utmSource,
+        utm_medium: utmMedium,
+        utm_campaign: utmCampaign,
+        utm_content: utmContent,
+        fbclid: fbclid,
       })
       .select('id')
       .single();

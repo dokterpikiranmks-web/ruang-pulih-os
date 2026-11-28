@@ -13,7 +13,10 @@ const TriageAnalyzeRequestSchema = z.object({
   disrupted_activity: z.string().min(1, 'Aktivitas terganggu wajib diisi'),
   readiness_choice: z.string().min(1, 'Kesiapan pasien wajib diisi'),
   utm_source: z.string().optional().nullable(),
+  utm_medium: z.string().optional().nullable(),
   utm_campaign: z.string().optional().nullable(),
+  utm_content: z.string().optional().nullable(),
+  fbclid: z.string().optional().nullable(),
 });
 
 const AIPolishResponseSchema = z
@@ -131,7 +134,10 @@ Wajib berikan output HANYA dalam format JSON valid dengan struktur persis sepert
           triage_summary: finalSummary,
           disclaimer_accepted: false,
           utm_source: payload.utm_source || null,
+          utm_medium: payload.utm_medium || null,
           utm_campaign: payload.utm_campaign || null,
+          utm_content: payload.utm_content || null,
+          fbclid: payload.fbclid || null,
         })
         .select('id')
         .single();

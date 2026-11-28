@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { formatWITADateTime, formatWITATime } from '@/lib/utils/timezone';
+import { getTrafficSourceBadge } from '@/lib/utils/utm';
 import ManualBookingModal from '@/components/admin/ManualBookingModal';
 import EditAppointmentModal from '@/components/admin/EditAppointmentModal';
 
@@ -36,6 +37,11 @@ interface AppointmentRecord {
   status: 'BOOKED' | 'CONFIRMED' | 'COMPLETED' | 'NO_SHOW' | 'RESCHEDULED' | 'CANCELLED';
   amount_paid_idr: number;
   notes: string | null;
+  utm_source?: string | null;
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
+  utm_content?: string | null;
+  fbclid?: string | null;
   patients: {
     id: string;
     full_name: string;
@@ -112,10 +118,10 @@ export default function AdminDashboardPage() {
     const supabase = createClient();
 
     try {
-      // 1. Fetch appointments with patient details
+      // 1. Fetch appointments with patient details and UTM attribution
       const { data: apptData, error } = await supabase
         .from('appointments')
-        .select('id, patient_id, slot_start, slot_end, package_type, status, amount_paid_idr, notes, patients(id, full_name, whatsapp, magic_token)')
+        .select('id, patient_id, slot_start, slot_end, package_type, status, amount_paid_idr, notes, utm_source, utm_medium, utm_campaign, utm_content, fbclid, patients(id, full_name, whatsapp, magic_token)')
         .order('slot_start', { ascending: false });
 
       if (error) throw error;
@@ -380,6 +386,7 @@ export default function AdminDashboardPage() {
                   <tr className="border-b border-gray-100 text-gray-400 uppercase font-semibold">
                     <th className="py-3 px-3">Jam (WITA)</th>
                     <th className="py-3 px-3">Nama Pasien</th>
+                    <th className="py-3 px-3">Sumber</th>
                     <th className="py-3 px-3">WhatsApp</th>
                     <th className="py-3 px-3">Paket</th>
                     <th className="py-3 px-3">Status</th>
@@ -391,6 +398,12 @@ export default function AdminDashboardPage() {
                   {filteredAppointments.map((appt) => {
                     const isCompleted = appt.status === 'COMPLETED';
                     const isNoShow = appt.status === 'NO_SHOW';
+                    const sourceBadge = getTrafficSourceBadge({
+                      utm_campaign: appt.utm_campaign,
+                      utm_source: appt.utm_source,
+                      utm_content: appt.utm_content,
+                      notes: appt.notes,
+                    });
 
                     return (
                       <tr key={appt.id} className="hover:bg-gray-50/50">
@@ -408,6 +421,14 @@ export default function AdminDashboardPage() {
 
                         <td className="py-3 px-3 font-semibold text-gray-900">
                           {appt.patients?.full_name || 'Pasien Anonim'}
+                        </td>
+
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold ${sourceBadge.bgClass} ${sourceBadge.textClass} ${sourceBadge.borderClass}`}
+                          >
+                            {sourceBadge.label}
+                          </span>
                         </td>
 
                         <td className="py-3 px-3 font-mono text-gray-600">

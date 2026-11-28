@@ -1,18 +1,24 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import TriageQuiz from '@/components/funnel/TriageQuiz';
 import TriageResult, { type TriageAnalysisData } from '@/components/funnel/TriageResult';
 import SlotBookingForm, { type BookingSuccessData } from '@/components/funnel/SlotBookingForm';
 import BookingSuccessTicket from '@/components/funnel/BookingSuccessTicket';
 import type { TriageInput } from '@/lib/triage/rules';
 import { Shield, MapPin, Phone } from 'lucide-react';
+import { captureAndStoreUTM, type UTMParams } from '@/lib/utils/utm';
 
 type FunnelStep = 'QUIZ' | 'ANALYSIS' | 'BOOKING' | 'SUCCESS';
 
 export default function Home() {
   const [step, setStep] = useState<FunnelStep>('QUIZ');
   const [isLoadingAnalysis, setIsLoadingAnalysis] = useState(false);
+
+  // Capture UTM parameters upon landing
+  useEffect(() => {
+    captureAndStoreUTM();
+  }, []);
 
   // Funnel State
   const [triageAnswers, setTriageAnswers] = useState<TriageInput | null>(null);
@@ -24,7 +30,7 @@ export default function Home() {
   // Handle Quiz Completion -> call /api/triage/analyze
   const handleQuizComplete = async (
     answers: TriageInput,
-    utm: { utm_source?: string; utm_campaign?: string }
+    utm: UTMParams
   ) => {
     setTriageAnswers(answers);
     setIsLoadingAnalysis(true);
@@ -40,7 +46,10 @@ export default function Home() {
           disrupted_activity: answers.disrupted_activity,
           readiness_choice: answers.readiness_choice,
           utm_source: utm.utm_source,
+          utm_medium: utm.utm_medium,
           utm_campaign: utm.utm_campaign,
+          utm_content: utm.utm_content,
+          fbclid: utm.fbclid,
         }),
       });
 
@@ -163,7 +172,7 @@ export default function Home() {
             Jl. Batua Raya 10B No. 9, Makassar, Sulawesi Selatan (WITA / UTC+8) • WhatsApp: 0811-4433-27
           </p>
           <p className="text-[11px] leading-relaxed text-gray-400 pt-2 border-t border-gray-100">
-            *Layanan Ruang Pulih Makassar adalah terapi komplementer holistik dan totok saraf integratif, bukan pengganti penanganan medis gawat darurat. Untuk kondisi darurat, segera kunjungi fasilitas IGD terdekat.
+            *Disclaimer Layanan: Ruang Pulih Makassar menyediakan terapi komplementer holistik dan totok saraf integratif sebagai ikhtiar pendukung pemulihan tubuh. Layanan ini bukan pengganti penanganan medis gawat darurat dan tidak menganjurkan penghentian obat dokter secara mendadak tanpa konsultasi dengan dokter yang merawat. Hasil dan durasi pemulihan dapat bervariasi pada setiap individu sesuai kondisi biologis tubuh.
           </p>
         </div>
       </footer>

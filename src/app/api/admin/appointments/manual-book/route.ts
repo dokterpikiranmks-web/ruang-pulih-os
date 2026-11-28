@@ -161,6 +161,8 @@ export async function POST(request: Request) {
         status: 'CONFIRMED',
         amount_paid_idr: 0,
         notes: payload.complaint_summary || null,
+        utm_source: 'Manual WA',
+        utm_campaign: 'admin_panel',
       })
       .select('id, patient_id, slot_start, slot_end, package_type, status, notes, created_at')
       .single();

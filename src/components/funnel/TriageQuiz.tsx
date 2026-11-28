@@ -3,9 +3,11 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Check, Sparkles } from 'lucide-react';
 import type { TriageInput } from '@/lib/triage/rules';
+import { trackPixelEvent } from '@/lib/utils/meta-pixel';
+import { captureAndStoreUTM, getStoredUTM, type UTMParams } from '@/lib/utils/utm';
 
 export interface TriageQuizProps {
-  onComplete: (answers: TriageInput, utm: { utm_source?: string; utm_campaign?: string }) => void;
+  onComplete: (answers: TriageInput, utm: UTMParams) => void;
   isLoading: boolean;
 }
 
@@ -93,21 +95,34 @@ export default function TriageQuiz({ onComplete, isLoading }: TriageQuizProps) {
     readiness_choice: '',
   });
 
-  const [utm, setUtm] = useState<{ utm_source?: string; utm_campaign?: string }>({});
+  const [utm, setUtm] = useState<UTMParams>({});
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      setUtm({
-        utm_source: params.get('utm_source') || undefined,
-        utm_campaign: params.get('utm_campaign') || undefined,
-      });
-    }
+    const captured = captureAndStoreUTM();
+    setUtm(captured);
+    // Track ViewContent when visitor starts the 5-click triage quiz
+    trackPixelEvent(
+      'ViewContent',
+      {
+        content_name: 'triage_quiz',
+        content_category: 'consultation_quiz',
+      },
+      'viewcontent_triage_quiz'
+    );
   }, []);
 
   const currentQ = QUESTIONS[currentStep];
 
   const handleSingleSelect = (value: string) => {
+    trackPixelEvent(
+      'ViewContent',
+      {
+        content_name: 'triage_quiz',
+        content_category: 'consultation_quiz',
+      },
+      'viewcontent_triage_quiz'
+    );
+
     const updated = { ...answers, [currentQ.field]: value };
     setAnswers(updated);
 
@@ -115,7 +130,8 @@ export default function TriageQuiz({ onComplete, isLoading }: TriageQuizProps) {
       setCurrentStep(currentStep + 1);
     } else {
       // Final step answered
-      onComplete(updated as TriageInput, utm);
+      const finalUtm = getStoredUTM();
+      onComplete(updated as TriageInput, Object.keys(finalUtm).length > 0 ? finalUtm : utm);
     }
   };
 
